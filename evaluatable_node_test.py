@@ -527,47 +527,37 @@ class EvaluatableNodeTest(unittest.TestCase):
         dict(
             value=Value('2019-12-01', BQScalarType.STRING),
             cast_type='DATETIME',
-            result=pd.Timestamp('2019-12-01')
+            result=datetime.datetime(2019, 12, 1),
         ),
         dict(
             value=Value('2019-12-01', BQScalarType.STRING),
             cast_type='DATE',
-            result=pd.Timestamp('2019-12-01')
+            result=datetime.date(2019, 12, 1),
         ),
         dict(
             value=Value('2019-12-01 01:02:03', BQScalarType.STRING),
             cast_type='TIMESTAMP',
-            result=pd.Timestamp('2019-12-01 01:02:03')
+            result=datetime.datetime(2019, 12, 1, 1, 2, 3),
         ),
         dict(
             value=Value(pd.Timestamp('2019-12-01'), BQScalarType.DATE),
             cast_type='DATETIME',
-            result=pd.Timestamp('2019-12-01')
+            result=datetime.datetime(2019, 12, 1),
         ),
         dict(
             value=Value(pd.Timestamp('2019-12-01'), BQScalarType.DATE),
             cast_type='TIMESTAMP',
-            result=pd.Timestamp('2019-12-01')
+            result=datetime.datetime(2019, 12, 1),
         ),
         dict(
             value=Value(pd.Timestamp('2019-12-01 00:01:02'), BQScalarType.DATETIME),
             cast_type='DATE',
-            result=pd.Timestamp('2019-12-01 00:01:02')
+            result=datetime.date(2019, 12, 1),
         ),
         dict(
             value=Value(pd.Timestamp('2019-12-01 00:01:02'), BQScalarType.DATETIME),
             cast_type='TIMESTAMP',
-            result=pd.Timestamp('2019-12-01 00:01:02')
-        ),
-        dict(
-            value=Value(pd.Timestamp('00:01:02'), BQScalarType.TIMESTAMP),
-            cast_type='DATE',
-            result=pd.Timestamp('00:01:02')
-        ),
-        dict(
-            value=Value(pd.Timestamp('00:01:02'), BQScalarType.TIMESTAMP),
-            cast_type='DATETIME',
-            result=pd.Timestamp('00:01:02')
+            result=datetime.datetime(2019, 12, 1, 0, 1, 2),
         ),
     )
     @unpack
@@ -575,8 +565,8 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: (Value, str, pd.Timestamp) -> None
         cast = Cast(value, cast_type)
 
-        dataframe = cast.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(list(dataframe.series), [result])
+        series = cast.evaluate(EMPTY_CONTEXT)
+        self.assertEqual(series.to_list(), [result])
 
     @data(
         dict(
@@ -585,12 +575,17 @@ class EvaluatableNodeTest(unittest.TestCase):
             # TODO: This error message should be about converting to
             # int, not float.  But bq_types currently defines
             # BQScalarType.INTEGER converting to float64.
-            error="could not convert string to float: abc"
+            #
+            # Python 3 surrounds the expression with quotes, Python 2 doesn't, so the
+            # regex .? matches the Py3-only quote.
+            error="could not convert string to float: .?abc"
         ),
         dict(
             value=Value("abc", BQScalarType.STRING),
             cast_type=BQScalarType.FLOAT,
-            error="could not convert string to float: abc"
+            # Python 3 surrounds the expression with quotes, Python 2 doesn't, so the
+            # regex .? matches the Py3-only quote.
+            error="could not convert string to float: .?abc"
         ),
         dict(
             value=Value("abc", BQScalarType.STRING),
