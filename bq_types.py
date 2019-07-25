@@ -367,6 +367,11 @@ class TypedSeries(object):
     def __repr__(self):
         return 'TypedSeries({!r}, {!r})'.format(self.series, self.type_)
 
+    def to_list(self):
+        # type: () -> List[PythonType]
+        """Returns the column as a list of Python-typed objects."""
+        return [self.type_.convert(element) for element in self.series]
+
 
 class TypedDataFrame(object):
     def __init__(self, dataframe, types):
@@ -410,7 +415,7 @@ class TypedDataFrame(object):
         """Returns the data as a list of rows, each row a list of Python-typed objects."""
         rows = []
         for unused_index, row in self.dataframe.iterrows():
-            rows.append([type_.convert(elt) for elt, type_ in zip(list(row), self.types)])
+            rows.append([type_.convert(element) for element, type_ in zip(list(row), self.types)])
         return rows
 
 

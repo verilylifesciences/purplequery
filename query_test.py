@@ -123,8 +123,7 @@ class QueryTest(unittest.TestCase):
         self.assertFalse(leftover, 'leftover {}'.format(leftover))
 
         typed_series = ast.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(len(typed_series.series), 1)
-        self.assertEqual(typed_series.series[0], expected_result)
+        self.assertEqual(typed_series.to_list(), [expected_result])
 
     @data(*(
         ('select * from `my_project.my_dataset.table1`',

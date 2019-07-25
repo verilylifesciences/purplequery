@@ -8,7 +8,7 @@ from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
 
 from bq_types import PythonType  # noqa: F401
-from bq_types import BQArray, BQScalarType, BQType, TypedDataFrame, implicitly_coerce
+from bq_types import BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries, implicitly_coerce
 
 # The NumPy types that are used to read in data into Pandas.
 NumPyType = Union[np.bool_, np.datetime64, np.float64, np.string_]
@@ -123,6 +123,15 @@ class BqTypesTest(unittest.TestCase):
         # NumPy doesn't know from cell elements that are lists, so it just leaves it as an
         # uninterpreted Python object.
         self.assertEqual(BQArray(bq_type).to_dtype(), np.dtype('object'))
+
+    def test_get_typed_series_as_list(self):
+        typed_series = TypedSeries(
+                pd.Series([[np.float64(1.5), np.float64(2.5), np.float64(3.0)],
+                           [np.float64(2.5), np.float64(3.5), np.float64(4.0)]]),
+                BQArray(BQScalarType.FLOAT))
+        self.assertEqual(typed_series.to_list(),
+                         [[1.5, 2.5, 3.0],
+                          [2.5, 3.5, 4.0]])
 
     def test_get_typed_dataframe_schema(self):
         typed_dataframe = TypedDataFrame(pd.DataFrame(columns=['a', 'b']),
