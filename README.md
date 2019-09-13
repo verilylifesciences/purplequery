@@ -16,7 +16,9 @@ PurpleQuery is compatible with Python 2 and 3.
 
 ## Installation
 
-TBD
+```sh
+pip install git+https://github.com/verilylifesciences/purplequery.git
+```
 
 ## Supported Features
 PurpleQuery supports
@@ -109,11 +111,11 @@ class MyTest(bq_test_case.BQTestCase):
 
 ## License
 
-TBD
+See [the license](LICENSE)
 
 ## Contributing
 
-TBD
+See [instructions for contributing to this project](CONTRIBUTING.md)
 
 ## Troubleshooting
 
