@@ -129,3 +129,20 @@ See `grammar.py` for the grammar understood; feel free to extend it!
 `NotImplementedError` is raised when a syntactic element is parsed but is
 not implemented in the backend, e.g. a function.  See `evaluatable_node.py` to
 add a new function or other expression element.
+
+## Running tests
+
+Clone the repository:
+```
+git clone https://github.com/verilylifesciences/purplequery.git
+```
+
+Build the docker container:
+```
+docker build -t purplequery purplequery/
+```
+
+Run the tests in the docker container:
+```
+docker run --rm -ti -v `pwd`/purplequery:/pq -w /pq purplequery /pq/run_tests.sh
+```

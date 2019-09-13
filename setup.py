@@ -18,12 +18,8 @@ import platform
 from setuptools import find_packages
 from setuptools import setup
 
-ANALYSIS_PY_UTILS = 'analysis-py-utils @ ' \
-    'https://github.com/verilylifesciences/analysis-py-utils/archive/' \
-    '11b06535c4d3973670d5b23ae3846f3601f00a1a.zip#egg=analysis-py-utils-1.0'
 REQUIRED_PACKAGES = ['numpy==1.13.3',
                      'pandas==0.20.3',
-                     ANALYSIS_PY_UTILS,
                      'google-api-core==1.6.0',
                      'google-cloud-bigquery==1.8.0',
                      'ddt>=1.2.1',

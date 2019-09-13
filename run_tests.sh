@@ -27,9 +27,14 @@ for version in 2 3; do
   source virtualTestEnv/bin/activate
   set -o nounset
 
+  export TEST_PROJECT=""
+
   pip$version install --upgrade pip
   pip$version install --upgrade setuptools
   pip$version install --upgrade enum34
+  # analysis-py-utils necessary for bq_client test, which tests integration
+  # between purplequery and analysis-py-utils
+  pip$version install "git+https://github.com/verilylifesciences/analysis-py-utils@11b06535c4d3973670d5b23ae3846f3601f00a1a"
   pip$version install .
 
   python$version -m bq_abstract_syntax_tree_test
