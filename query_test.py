@@ -191,6 +191,9 @@ class QueryTest(unittest.TestCase):
         ('select a in (b, c) from `my_project.my_dataset.table3`',
          [[True], [False], [True]]),
 
+        ('select distinct a from table2',
+         [[1], [2]]),
+
         ('select a, max(d), min(e), sum(e), count(*) '
          'from `my_project.my_dataset.table2` group by table2.a',
          [[1, 6, 0, 0, 1],

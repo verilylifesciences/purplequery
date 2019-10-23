@@ -264,9 +264,6 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
             this table
         '''
 
-        if self.modifier == 'DISTINCT':
-            raise NotImplementedError("SELECT DISTINCT not implemented")
-
         if isinstance(self.from_, _EmptyNode):
             context = EvaluationContext(datasets)
         else:
@@ -304,6 +301,9 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
             if not isinstance(rows_to_keep, TypedSeries):
                 raise ValueError("Invalid HAVING expression {}".format(rows_to_keep))
             result = TypedDataFrame(result.dataframe.loc[rows_to_keep.series], result.types)
+
+        if self.modifier == 'DISTINCT':
+            result = TypedDataFrame(result.dataframe.drop_duplicates(), result.types)
 
         return result, DEFAULT_TABLE_NAME
 

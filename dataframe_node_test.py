@@ -233,6 +233,26 @@ class DataframeNodeTest(unittest.TestCase):
             select_node.get_dataframe(group_datasets)
 
     @data(
+        dict(select='select distinct a from my_table', expected_result=[[1]]),
+        dict(select='select distinct b from my_table', expected_result=[[2], [3]]),
+        dict(select='select distinct a, b from my_table', expected_result=[[1, 2], [1, 3]]),
+    )
+    @unpack
+    def test_select_distinct(self, select, expected_result):
+        # type: (str, List[List[int]]) -> None
+        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+            pd.DataFrame(
+                [[1, 2], [1, 3]],
+                columns=['a', 'b']),
+            types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
+        )}}}
+        select_node, leftover = select_rule(tokenize(select))
+        assert isinstance(select_node, Select)
+        dataframe, unused_table_name = select_node.get_dataframe(datasets)
+        self.assertFalse(leftover)
+        self.assertEqual(dataframe.to_list_of_lists(), expected_result)
+
+    @data(
         # WHERE b = 4
         (BinaryExpression(Field(('b',)), '=', Value(value=4, type_=BQScalarType.INTEGER)),),
         # WHERE b = 4 AND a = 3
