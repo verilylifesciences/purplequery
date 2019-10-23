@@ -22,7 +22,7 @@ pip install git+https://github.com/verilylifesciences/purplequery.git
 
 ## Supported Features
 PurpleQuery supports
-- SELECT ... FROM ... JOIN ... WHERE ... GROUP BY ... ORDER BY ... LIMIT ...
+- SELECT [DISTINCT] ... FROM ... JOIN ... WHERE ... GROUP BY ... ORDER BY ... LIMIT ...
 - INNER, OUTER, CROSS joins
 - UNION ALL
 - Analytic functions
@@ -47,7 +47,7 @@ Functions including
 - TIMESTAMP
 
 ## Unsupported features
-- SELECT table.\*, DISTINCT, EXCEPT/REPLACE
+- SELECT table.\*, EXCEPT/REPLACE
 - ARRAYs
 - STRUCTs
 - WITH
