@@ -7,7 +7,8 @@
 
 import operator
 from abc import ABCMeta, abstractmethod
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, Union  # noqa: F401
+from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple,  # noqa: F401
+                    Union)
 
 import pandas as pd
 
@@ -51,11 +52,17 @@ class Case(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
         if not whens:
             raise ValueError("Must provide at least one WHEN for a CASE")
         for when, then in whens:
+            if not isinstance(when, EvaluatableNode):
+                raise ValueError("Invalid CASE expression; WHEN {} must be an expression."
+                                 .format(comparand))
             if not isinstance(comparand, _EmptyNode):
                 # If there's a comparand, generate conditions by comparing the
                 # comparand with each WHEN
                 # This allows us to consistently treat each when as a binary expression,
                 # and not have to separately store the comparand.
+                if not isinstance(comparand, EvaluatableNode):
+                    raise ValueError("Invalid CASE expression; comparand {} must be an expression."
+                                     .format(comparand))
                 when = BinaryExpression(comparand, '=', when)
             self.children.append(when)
             self.children.append(then)
@@ -63,7 +70,8 @@ class Case(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
         self.children.append(else_ if not isinstance(else_, _EmptyNode) else Value(None, None))
 
     def copy(self, new_children):
-        # type: (List[EvaluatableNode]) -> EvaluatableNode
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
+        new_children = list(new_children)
         new_else_ = new_children.pop()
         return Case(
             comparand=EMPTY_NODE,
@@ -109,8 +117,8 @@ class Cast(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
         self.type_ = BQScalarType.from_string(type_)
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
-        return Cast(new_arguments[0], self.type_)
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
+        return Cast(new_arguments[0], self.type_.value)
 
     def _evaluate_node(self, evaluated_children):
         # type: (List[TypedSeries]) -> TypedSeries
@@ -123,17 +131,17 @@ class Exists(MarkerSyntaxTreeNode, EvaluatableLeafNode):
     '''An expression that returns TRUE if the subquery produces one or more rows.  For example:
     EXISTS(SELECT a FROM table WHERE a=1)
     '''
-    def __init__(self, select):
+    def __init__(self, subquery):
         # type: (DataframeNode) -> None
         '''An EXISTS node
 
         Args:
-            select: A select subquery
+            subquery: A subquery
         '''
-        self.select = select
+        self.subquery = subquery
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         return self
 
     def _evaluate_leaf_node(self, context):
@@ -153,7 +161,7 @@ class Exists(MarkerSyntaxTreeNode, EvaluatableLeafNode):
             single_row_df = TypedDataFrame(
                 pd.DataFrame([row], index=context.table.dataframe.index), context.table.types)
             row_context = EvaluationContext.clone_context_new_table(single_row_df, context)
-            typed_df, df_name = self.select.get_dataframe(context.datasets, row_context)
+            typed_df, df_name = self.subquery.get_dataframe(context.datasets, row_context)
             results.append(len(typed_df.dataframe) > 0)
         # Construct a Series that contains each of the individual result rows
         return TypedSeries(pd.Series(results, index=_get_index(context.table.dataframe)),
@@ -188,7 +196,7 @@ class Extract(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
             raise ValueError('Not a valid date part to retrieve: {}'.format(self.part))
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return Extract(self.part, new_arguments[0])
 
     def _evaluate_node(self, evaluated_children):
@@ -232,7 +240,7 @@ class If(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
         self.children = [condition, then, else_]
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return If(*new_arguments)
 
     def _evaluate_node(self, evaluated_children):
@@ -266,7 +274,7 @@ class InCheck(EvaluatableNodeWithChildren):
                              .format(direction))
 
     def copy(self, new_children):
-        # type: (List[EvaluatableNode]) -> EvaluatableNode
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return InCheck(new_children[0],
                        'IN' if self.direction else 'NOT_IN',
                        tuple(new_children[1:]))
@@ -297,7 +305,7 @@ class Not(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
         self.children = [expression]
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return Not(new_arguments[0])
 
     def _evaluate_node(self, evaluated_children):
@@ -333,7 +341,7 @@ class NullCheck(EvaluatableNodeWithChildren):
                              .format(direction))
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return NullCheck(new_arguments[0], 'IS_NULL' if self.direction else 'IS_NOT_NULL')
 
     def _evaluate_node(self, evaluated_children):
@@ -381,7 +389,7 @@ class StarSelector(EvaluatableLeafNode):
         raise ValueError("select * doesn't have a name.")
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         raise ValueError("Can't evaluate select * in a group by context.")
 
     def _evaluate_leaf_node(self, context):
@@ -421,7 +429,7 @@ class Selector(EvaluatableNodeWithChildren):
         self.position = None  # type: Optional[int]
 
     def copy(self, new_children):
-        # type: (List[EvaluatableNode]) -> EvaluatableNode
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return Selector(new_children[0], self.name())
 
     def name(self):
@@ -434,7 +442,7 @@ class Selector(EvaluatableNodeWithChildren):
         return self.children[0].name() or '_f{}'.format(self.position)
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         if context.get_canonical_path((self.name(),)) in group_by_paths:
             return GroupedBy(self)
         return self.copy([self.children[0].mark_grouped_by(group_by_paths, context)])
@@ -469,7 +477,7 @@ class UnaryNegation(EvaluatableNodeWithChildren):
         return TypedSeries(-typed_value.series, typed_value.type_)
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return UnaryNegation(new_arguments[0])
 
 
@@ -498,12 +506,16 @@ class Value(EvaluatableLeafNode):
     '''A node representing a literal value (number, string, boolean, null).'''
 
     def __init__(self, value, type_):
-        # type: (LiteralType, BQScalarType) -> None
+        # type: (Optional[LiteralType], Optional[BQScalarType]) -> None
+        if (value is None) != (type_ is None):
+            raise ValueError(
+                "Value(None, None) means NULL; Value({}, {}) is not allowed"
+                .format(value, type_))
         self.value = value
         self.type_ = type_
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         return self
 
     def strexpr(self):
@@ -526,8 +538,9 @@ class Value(EvaluatableLeafNode):
 
 _SeriesMaybeGrouped = Union[pd.Series, pd.core.groupby.SeriesGroupBy]
 _FunctionType = Callable[[List[_SeriesMaybeGrouped]], _SeriesMaybeGrouped]
-_OverClauseType = Tuple[Union[_EmptyNode, List[EvaluatableNode]],
-                        Union[_EmptyNode, List[EvaluatableNode]]]
+_OverClauseType = Tuple[Union[_EmptyNode, Sequence[EvaluatableNode]],
+                        Union[_EmptyNode, List[Tuple[EvaluatableNode,
+                                                     Union[_EmptyNode, str]]]]]
 
 
 class _Function(object):
@@ -576,6 +589,11 @@ class _AggregatingFunction(_Function):
         '''
 
 
+_CounteeType = Union[str,                           # a literal * i.e. COUNT(*)
+                     Tuple[Union[str, _EmptyNode],  # optional modifier, e.g. DISTINCT
+                           EvaluatableNode]]        # the thing counted.
+
+
 class Count(_AggregatingFunction):
     '''A COUNT function, for example:
     SELECT COUNT(*) FROM Table
@@ -585,7 +603,7 @@ class Count(_AggregatingFunction):
 
     @classmethod
     def create_count_function_call(cls,
-                                   countee,  # type: Union[str, Tuple[str, EvaluatableNode]]
+                                   countee,  # type: _CounteeType
                                    over_clause  # type: _OverClauseType
                                    ):
         # type: (...) -> EvaluatableNode
@@ -606,7 +624,9 @@ class Count(_AggregatingFunction):
             or an _AnalyticFunctionCall expression, if it is, either way using this function.
         '''
         # Treat count(*) as if it were count(1), which is equivalent.
-        if countee == '*':
+        if isinstance(countee, str):
+            if countee != '*':
+                raise ValueError("Invalid expression COUNT({})".format(countee))
             countee = (EMPTY_NODE, Value(1, BQScalarType.INTEGER))
         maybe_distinct, argument = countee
         if maybe_distinct == 'DISTINCT':
@@ -711,7 +731,7 @@ class FunctionCall(object):
     def create(cls,
                function_name,  # type: str
                expression,  # type: Union[_EmptyNode, List[EvaluatableNode]]
-               over_clause  # type: _OverClauseType
+               over_clause  # type: Union[_EmptyNode, _OverClauseType]
                ):
         # type: (...) -> EvaluatableNode
         function_name = function_name.upper()
@@ -728,7 +748,7 @@ class FunctionCall(object):
                 (isinstance(expression, _EmptyNode) or len(expression) != 1)):
             raise NotImplementedError("Aggregating functions are only supported with 1 argument")
 
-        if over_clause is not EMPTY_NODE:
+        if not isinstance(over_clause, _EmptyNode):
             return _AnalyticFunctionCall(function_info, expression, over_clause)
         elif isinstance(function_info, _AggregatingFunction):
             return _AggregatingFunctionCall(function_info, expression)
@@ -760,15 +780,15 @@ class _NonAggregatingFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
     '''A function call that does not aggregate rows, e.g. concat.'''
 
     def __init__(self, function_info, expression):
-        # type: (_NonAggregatingFunction, Union[_EmptyNode, List[EvaluatableNode]]) -> None
+        # type: (_NonAggregatingFunction, Union[_EmptyNode, Sequence[EvaluatableNode]]) -> None
         self.function_info = function_info
-        if expression is not EMPTY_NODE:
+        if not isinstance(expression, _EmptyNode):
             self.children = expression
         else:
             self.children = []
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return _NonAggregatingFunctionCall(self.function_info, new_arguments)
 
     def _evaluate_node(self, arguments):
@@ -781,15 +801,15 @@ class _AggregatingFunctionCall(FunctionCall, EvaluatableNodeThatAggregatesOrGrou
     '''A function call that aggregates rows, e.g. sum.'''
 
     def __init__(self, function_info, expression):
-        # type: (_AggregatingFunction, Union[_EmptyNode, List[EvaluatableNode]]) -> None
+        # type: (_AggregatingFunction, Union[_EmptyNode, Sequence[EvaluatableNode]]) -> None
         self.function_info = function_info
-        if expression is not EMPTY_NODE:
+        if not isinstance(expression, _EmptyNode):
             self.children = expression
         else:
             self.children = []
 
     def copy(self, new_arguments):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return _AggregatingFunctionCall(self.function_info, new_arguments)
 
     def _evaluate_node(self, arguments):
@@ -811,7 +831,7 @@ class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
     '''A function call that is evaluated over windows of the data but with results for each row.'''
 
     def __init__(self, function_info, maybe_arguments, over_clause):
-        # type: (_Function, Union[_EmptyNode, List[EvaluatableNode]], _OverClauseType) -> None
+        # type: (_Function, Union[_EmptyNode, Sequence[EvaluatableNode]], _OverClauseType) -> None
         '''Creates a function call expression for an invocation of an analytic function
 
         Args:
@@ -826,11 +846,12 @@ class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
         '''
         self.function_info = function_info
         maybe_partition_by, maybe_order_by = over_clause
-        partition_by = [] if maybe_partition_by is EMPTY_NODE else list(maybe_partition_by)
-        order_by = [] if maybe_order_by is EMPTY_NODE else list(maybe_order_by)
+        partition_by = [] if isinstance(maybe_partition_by, _EmptyNode)else list(maybe_partition_by)
+        order_by = [] if isinstance(maybe_order_by, _EmptyNode) else list(maybe_order_by)
         self.order_by_ascending = [
-                direction == EMPTY_NODE or direction.upper() != 'DESC' for _, direction in order_by]
-        arguments = [] if maybe_arguments is EMPTY_NODE else list(maybe_arguments)
+            isinstance(direction, _EmptyNode) or direction.upper() != 'DESC'
+            for _, direction in order_by]
+        arguments = [] if isinstance(maybe_arguments, _EmptyNode) else list(maybe_arguments)
 
         # Row_number() doesn't take any arguments, but it does need to know how many rows there are.
         # An easy way to make that work is to pass a constant 1 argument, which will be expanded
@@ -847,7 +868,7 @@ class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
         self.num_partition_by = len(partition_by)
 
     def copy(self, new_children):
-        # type: (List[EvaluatableNode]) -> FunctionCall
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
         return _AnalyticFunctionCall(
                 self.function_info,
                 new_children[:self.num_arguments],

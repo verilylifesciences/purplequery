@@ -16,7 +16,7 @@ returns an abstract syntax tree node that evaluates the corresponding expression
 """
 
 import re
-from typing import Callable, List, NamedTuple, Optional, Union  # noqa: F401
+from typing import Callable, List, NamedTuple, Optional, Union, cast  # noqa: F401
 
 from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import (AppliedRuleOutputType, EvaluatableNode,  # noqa: F401
@@ -78,18 +78,18 @@ def _reparse_binary_expression(unparsed_sequence):
                 # And the next character is an operator, not an AST node
                 and isinstance(unparsed_sequence[0], str) and
                 # And the next character doesn't bind more tightly than what's on the parse_stack
-                (BINARY_OPERATOR_INFO[parse_stack[-2]].precedence
+                (BINARY_OPERATOR_INFO[cast(str, parse_stack[-2])].precedence
                  <= BINARY_OPERATOR_INFO[unparsed_sequence[0]].precedence))):
             # then reduce!
-            right_expression = parse_stack.pop()
-            operator_str = parse_stack.pop()
-            left_expression = parse_stack.pop()
+            right_expression = cast(EvaluatableNode, parse_stack.pop())
+            operator_str = cast(str, parse_stack.pop())
+            left_expression = cast(EvaluatableNode, parse_stack.pop())
             parse_stack.append(BinaryExpression(left_expression, operator_str, right_expression))
         else:
             # Otherwise, shift!
             parse_stack.append(unparsed_sequence.pop(0))
     # The loop has exited, therefore unparsed_sequence is empty and parse_stack has 1 element left.
-    return parse_stack[0]
+    return cast(EvaluatableNode, parse_stack[0])
 
 
 def binary_operator_expression_rule(subexpression_rule):

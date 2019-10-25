@@ -14,7 +14,7 @@ from typing import Callable, NamedTuple, Optional
 
 import numpy as np
 
-from bq_types import BQScalarType
+from bq_types import BQScalarType, BQType
 
 """Tuple for storing operator info.
 
@@ -29,7 +29,7 @@ _OperatorInfo = NamedTuple('_OperatorInfo', [
     ('operator', str),
     ('precedence', int),
     ('function', Callable),
-    ('result_type', Optional[BQScalarType])])
+    ('result_type', Optional[BQType])])
 
 # Information on binary operators in BigQuery
 # Precedence is from https://cloud.google.com/bigquery/docs/reference/standard-sql/operators

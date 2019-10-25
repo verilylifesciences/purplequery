@@ -157,6 +157,7 @@ class DataframeNodeTest(unittest.TestCase):
     def test_query_expression_order_by(self, query_expression, expected_result):
         # type: (str, List[List[int]]) -> None
         query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
+        assert isinstance(query_expression_node, QueryExpression)
         dataframe, unused_table_name = query_expression_node.get_dataframe(self.datasets)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
@@ -204,6 +205,7 @@ class DataframeNodeTest(unittest.TestCase):
             types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
         )}}}
         select_node, leftover = select_rule(tokenize(select))
+        assert isinstance(select_node, Select)
         dataframe, unused_table_name = select_node.get_dataframe(group_datasets)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
@@ -225,6 +227,7 @@ class DataframeNodeTest(unittest.TestCase):
             types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
         )}}}
         select_node, leftover = select_rule(tokenize(select))
+        assert isinstance(select_node, Select)
         self.assertFalse(leftover)
         with self.assertRaisesRegexp(ValueError, "not aggregated or grouped by"):
             select_node.get_dataframe(group_datasets)
@@ -277,6 +280,7 @@ class DataframeNodeTest(unittest.TestCase):
         )}}}
 
         select_node, leftover = select_rule(tokenize(select))
+        assert isinstance(select_node, Select)
         dataframe, unused_table_name = select_node.get_dataframe(group_datasets)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
@@ -300,10 +304,10 @@ class DataframeNodeTest(unittest.TestCase):
         # type: () -> None
         new_datasets = {
             'project1': {
-                'dataset1': {'table1': None}
+                'dataset1': {'table1': TypedDataFrame(pd.DataFrame(), [])}
             },
             'project2': {
-                'dataset2': {'table2': None}
+                'dataset2': {'table2': TypedDataFrame(pd.DataFrame(), [])}
             }
         }
         table_ref = TableReference(('dataset1', 'table1'))
@@ -316,8 +320,8 @@ class DataframeNodeTest(unittest.TestCase):
         # type: () -> None
         new_datasets = {
             'project1': {
-                'dataset1': {'table1': None},
-                'dataset2': {'table2': None}
+                'dataset1': {'table1': TypedDataFrame(pd.DataFrame(), [])},
+                'dataset2': {'table2': TypedDataFrame(pd.DataFrame(), [])}
             },
         }
         table_ref = TableReference(('table1',))

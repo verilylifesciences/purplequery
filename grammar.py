@@ -44,14 +44,14 @@ functions.  Therefore constants are formatted the same as functions here, becaus
 become them as they grow in complexity.
 '''
 
-from typing import List  # noqa: F401
+from typing import List, cast  # noqa: F401
 
 from bq_abstract_syntax_tree import EMPTY_NODE, Field
 from bq_operator import binary_operator_expression_rule
 from dataframe_node import QueryExpression, Select, SetOperation, TableReference
 from evaluatable_node import (Case, Cast, Count, Exists, Extract, FunctionCall, If, InCheck, Not,
                               NullCheck, Selector, StarSelector, UnaryNegation)
-from join import DataSource, Join
+from join import DataSource, FromItemType, Join
 from query_helper import AppliedRuleOutputType  # noqa: F401
 from query_helper import apply_rule, separated_sequence
 from terminals import grammar_literal, identifier, literal
@@ -164,7 +164,7 @@ def core_expression(tokens):
 
             (Cast, '(', expression, 'AS', identifier, ')'),
 
-            (Exists, '(', select, ')'),
+            (Exists, '(', query_expression, ')'),
 
             (Extract, '(', identifier, 'FROM', expression, ')'),
 
@@ -304,6 +304,9 @@ def alias(tokens):
     if alias_node == EMPTY_NODE:
         return EMPTY_NODE, tokens
 
+    if not (isinstance(alias_node, tuple) and len(alias_node) == 2):
+        raise RuntimeError("Internal parse error: alias rule returned {!r}".format(alias_node))
+
     # The alias node will be a tuple of ('AS', new_name), so we get rid of the
     # 'AS' and just return the new name (alias identifier)
     as_token, alias_identifier = alias_node
@@ -427,10 +430,13 @@ def data_source(orig_tokens):
         if next_join:
             # This case is triggered by the shorthand cross-join above where the table to be joined
             # is just specified separated by a comma, with no join type or condition specified.
+            if not isinstance(next_join, tuple):
+                raise RuntimeError("Internal error; join rule above must result in tuple not {}"
+                                   .format(next_join))
             if len(next_join) == 2:
-                joins.append(Join('CROSS', next_join, EMPTY_NODE))
+                joins.append(Join('CROSS', cast(FromItemType, next_join), EMPTY_NODE))
             else:
                 joins.append(Join(*next_join))
         else:
             break
-    return DataSource(first_from, joins), tokens
+    return DataSource(cast(FromItemType, first_from), joins), tokens

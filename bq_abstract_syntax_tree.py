@@ -13,7 +13,7 @@ from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, S
 import pandas as pd
 import six
 
-from bq_types import BQScalarType, TypedDataFrame, TypedSeries  # noqa: F401
+from bq_types import BQScalarType, BQType, TypedDataFrame, TypedSeries  # noqa: F401
 
 NoneType = type(None)
 DatasetType = Dict[str, Dict[str, Dict[str, TypedDataFrame]]]
@@ -64,10 +64,14 @@ class AbstractSyntaxTreeNode(object):
 
 
 # These type definitions must live here, after AbstractSyntaxTreeNode is defined
-AppliedRuleOutputType = Tuple[Union[str, AbstractSyntaxTreeNode, NoneType], List[str]]
+AppliedRuleNode = Union[str,
+                        AbstractSyntaxTreeNode,
+                        NoneType,
+                        Tuple]  # actually Tuple[AppliedRuleNode]; mypy can't do recursive types :(
+AppliedRuleOutputType = Tuple[AppliedRuleNode, List[str]]
 # Should include Tuple[RuleType] and List[RuleType] but mypy doesn't fully
 # support recursive types yet.
-RuleType = Union[str, Tuple[Any], List[Any], Callable[[List[str]], AppliedRuleOutputType]]
+RuleType = Union[str, Tuple[Any, ...], List[Any], Callable[[List[str]], AppliedRuleOutputType]]
 
 
 class MarkerSyntaxTreeNode(AbstractSyntaxTreeNode):
@@ -133,7 +137,7 @@ class EvaluatableNode(AbstractSyntaxTreeNode):
 
     @abstractmethod
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         '''Returns a new syntax tree rooted at the current one, marking fields that are grouped by.
 
         Args:
@@ -153,7 +157,13 @@ class EvaluatableLeafNode(EvaluatableNode):
     def pre_group_by_partially_evaluate(self, context):
         # type: (EvaluationContext) -> Union[TypedSeries, EvaluatableNode]
         '''See docstring in EvaluatableNode.pre_group_by_partially_evaluate'''
-        return self._evaluate_leaf_node(context)
+        result = self._evaluate_leaf_node(context)
+        if isinstance(result, TypedDataFrame):
+            # TODO: This codepath can be hit in a query like SELECT * GROUP BY
+            # Such a query can actually be valid if every *-selected field is
+            # grouped by.  Support this.
+            raise ValueError("Cannot partially evaluate {!r}".format(self))
+        return result
 
     @abstractmethod
     def _evaluate_leaf_node(self, context):
@@ -189,7 +199,7 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
         # - a * 2
         # - concat(foo, "/", bar)
         if all(isinstance(child, TypedSeries) for child in evaluated_children):
-            return self._evaluate_node(evaluated_children)
+            return self._evaluate_node(cast(List[TypedSeries], evaluated_children))
 
         # Expressions whose children are not fully evaluated should not keep the caches of partial
         # evaluation; not being fully evaluated means that this expression is outside of
@@ -207,6 +217,14 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
                 evaluated_child if isinstance(evaluated_child, EvaluatableNode) else child
                 for child, evaluated_child in zip(self.children, evaluated_children)])
 
+    def _ensure_fully_evaluated(self, evaluated_children):
+        # type: (List[Any]) -> List[TypedSeries]
+        '''Ensure evaluated_children are fully evaluated; raise ValueError if not.'''
+        if not all(isinstance(child, TypedSeries) for child in evaluated_children):
+            raise ValueError(
+                    "In order to evaluate {}, all children must be evaluated.".format(self))
+        return cast(List[TypedSeries], evaluated_children)
+
     def evaluate(self, context):
         # type: (EvaluationContext) -> Union[TypedDataFrame, TypedSeries]
         '''Generates a new table or column based on applying the instance's
@@ -221,10 +239,7 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
             A new table (TypedDataFrame) or column (TypedSeries)
         '''
         evaluated_children = [child.evaluate(context) for child in self.children]
-        if not all(isinstance(child, TypedSeries) for child in evaluated_children):
-            raise ValueError(
-                    "In order to evaluate {}, all children must be evaluated.".format(self))
-        return self._evaluate_node(evaluated_children)
+        return self._evaluate_node(self._ensure_fully_evaluated(evaluated_children))
 
     @abstractmethod
     def _evaluate_node(self, evaluated_children):
@@ -259,7 +274,7 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
         '''
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         '''Returns a new syntax tree rooted at the current one, marking fields that are grouped by.
 
         Args:
@@ -283,16 +298,12 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
     def pre_group_by_partially_evaluate(self, context):
         # type: (EvaluationContext) -> Union[TypedSeries, EvaluatableNode]
         '''See docstring in EvaluatableNode.pre_group_by_partially_evaluate'''
-        evaluated_children = [child.pre_group_by_partially_evaluate(context)
-                              for child in self.children]
-
         # aggregating and grouped by expressions must fully evaluate children, then we cache
         # those expressions into the context and return a new AST node that computes the aggregate
         # over lookups from the cache (which will be grouped in the second-pass evaluation).
-        if not all(isinstance(child, TypedSeries) for child in evaluated_children):
-            raise ValueError(
-                    "In order to execute aggregator {}, all children must be evaluated."
-                    .format(self))
+        evaluated_children = self._ensure_fully_evaluated(
+            [child.pre_group_by_partially_evaluate(context)
+             for child in self.children])
         return self.copy(
                 [Field(context.maybe_add_column(evaluated_child))
                  for evaluated_child in evaluated_children])
@@ -300,10 +311,8 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
     def evaluate(self, context):
         # type: (EvaluationContext) -> Union[TypedDataFrame, TypedSeries]
         '''See docstring in EvaluatableNode.evaluate.'''
-        evaluated_children = [child.evaluate(context) for child in self.children]
-        if not all(isinstance(child, TypedSeries) for child in evaluated_children):
-            raise ValueError(
-                    "In order to evaluate {}, all children must be evaluated.".format(self))
+        evaluated_children = self._ensure_fully_evaluated(
+            [child.evaluate(context) for child in self.children])
         if context.group_by_paths:
             return self._evaluate_node_in_group_by(evaluated_children)
         else:
@@ -326,7 +335,7 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
         '''
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         '''Returns a new syntax tree rooted at the current one, marking fields that are grouped by.
 
         Args:
@@ -345,13 +354,15 @@ class DataframeNode(AbstractSyntaxTreeNode):
     can be JOINed to another DataframeNode.
     '''
 
-    def get_dataframe(self, datasets):
-        # type: (DatasetType) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, datasets, outer_context=None):
+        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''Scope the given datasets by the criteria specified in the
         instance's fields.
 
         Args:
             datasets: All the tables in the database
+            outer_context: Context of a containing query (e.g. an EXISTS expression)
+
         Returns:
             Tuple of the resulting table (TypedDataFrame) and a name for
             this table
@@ -413,7 +424,7 @@ class Field(EvaluatableLeafNode):
         return '.'.join(self.path)
 
     def mark_grouped_by(self, group_by_paths, context):
-        # type: (List[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
+        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         if context.get_canonical_path(self.path) in group_by_paths:
             return GroupedBy(self)
         return self
@@ -466,7 +477,7 @@ class EvaluationContext:
         self.table = TypedDataFrame(pd.DataFrame([[1]]), [None])  # type: TypedDataFrame
 
         # Mapping of column ID (prefixed by table ID) to its type
-        self.canonical_column_to_type = {}  # type: Dict[str, BQScalarType]
+        self.canonical_column_to_type = {}  # type: Dict[str, BQType]
 
         # Mapping of column IDs to list of table IDs to which they belong
         self.column_to_table_ids = collections.defaultdict(list)  # type: Dict[str, List[str]]
@@ -546,7 +557,7 @@ class EvaluationContext:
         return canonical_path
 
     def do_group_by(self, selectors, group_by):
-        # type: (List[EvaluatableNode], List[Field]) -> None
+        # type: (Sequence[EvaluatableNode], List[Field]) -> List[EvaluatableNode]
         """Groups the current context by the requested paths.
 
         Canonicalizes the paths (figures out which table a plain column name goes with), applies
@@ -561,16 +572,17 @@ class EvaluationContext:
         if isinstance(self.table.dataframe, pd.core.groupby.DataFrameGroupBy):
             raise ValueError("Context already grouped!")
         group_by_paths = [self.get_canonical_path(field.path) for field in group_by]
-        selectors = [field.mark_grouped_by(group_by_paths, self) for field in selectors]
-        selectors = [field.pre_group_by_partially_evaluate(self) for field in selectors]
-        selectors = [Field(self.maybe_add_column(selector)) if isinstance(selector, TypedSeries)
-                     else selector for selector in selectors]
+        marked_selectors = [field.mark_grouped_by(group_by_paths, self) for field in selectors]
+        partially_evaluated_selectors = [
+            field.pre_group_by_partially_evaluate(self) for field in marked_selectors]
+        new_selectors = [Field(self.maybe_add_column(selector)) if isinstance(selector, TypedSeries)
+                         else selector for selector in partially_evaluated_selectors]
 
         group_by_fields = ['.'.join(path) for path in group_by_paths]
         grouped = self.table.dataframe.groupby(by=group_by_fields)
         self.table = TypedDataFrame(grouped, self.table.types)
         self.group_by_paths = group_by_paths
-        return selectors
+        return new_selectors
 
     def add_table_from_node(self, from_item, alias):
         # type: (DataframeNode, Union[_EmptyNode, str]) -> Tuple[TypedDataFrame, str]

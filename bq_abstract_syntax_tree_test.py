@@ -96,7 +96,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
     @data(
         (('c',), "field c is not present in any from'ed tables"),
         (('my_table', 'b'), "field b is not present in table my_table"),
-        (('a',), "field a is ambiguous: present in \[\('my_table', 'a'\), \('my_table2', 'a'\)\]")
+        (('a',), r"field a is ambiguous: present in \[\('my_table', 'a'\), \('my_table2', 'a'\)\]")
     )
     @unpack
     def test_evaluation_context_path_error(self, path, error):
@@ -118,15 +118,15 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                EMPTY_NODE)
 
-        path = ('b')
+        path = ('b', )
         result = ec.lookup(path)
         self.assertEqual(list(result.series), [2, 4])
         self.assertEqual(result.type_, BQScalarType.INTEGER)
 
     @data(
-        (('b'), [2, 4]),
+        (('b', ), [2, 4]),
         (('my_table2', 'b'), [2, 4]),
-        (('c'), [5, 6]),
+        (('c', ), [5, 6]),
     )
     @unpack
     def test_subcontext_lookup_success(self, path, expected_result):
@@ -169,8 +169,8 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
                                EMPTY_NODE)
 
         path = ('my_table', 'c')
-        error = "path \('my_table', 'c'\) \(canonicalized to key 'my_table.c'\) " \
-                "not present in table; columns available: \['my_table.a'\]"
+        error = (r"path \('my_table', 'c'\) \(canonicalized to key 'my_table.c'\) "
+                 r"not present in table; columns available: \['my_table.a'\]")
 
         # Fake in an entry to the column -> table mapping to test the error
         ec.column_to_table_ids['c'] = ['my_table']
