@@ -9,7 +9,8 @@ DataSource is an abstract syntax tree representing the data pulled into a select
 consisting of one or more tables JOINed together.  The create_context method of this class
 implements the logic to join the tables together according to specified conditions.
 '''
-from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple, Union, cast  # noqa: F401
+from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple,  # noqa: F401
+                    Union, cast)
 
 import pandas as pd
 
@@ -24,7 +25,10 @@ _CROSS_KEY = '__cross_key__'
 
 
 FromItemType = Tuple[DataframeNode, Union[_EmptyNode, str]]
-ConditionsType = Tuple[Union[str, Tuple[Field, Field]], ...]
+ConditionsType = Union[_EmptyNode,  # JOIN with no condition
+                       Tuple[str, ...],  # JOIN USING (strings)
+                       EvaluatableNode,  # JOIN ON (condition)
+                       ]
 
 Join = NamedTuple('Join', [('join_type', Union[str, _EmptyNode]),
                            ('join_with_alias', FromItemType),
@@ -113,7 +117,7 @@ def _get_common_columns(left_table, right_table):
 
 
 def _get_join_using(join_condition, right_table_id, context):
-    # type: (ConditionsType, str, EvaluationContext) -> Tuple[List[str], List[str]]
+    # type: (Sequence[str], str, EvaluationContext) -> Tuple[List[str], List[str]]
     '''Returns the left and right columns matching a list of shared column ids.
 
     Args:
@@ -125,7 +129,6 @@ def _get_join_using(join_condition, right_table_id, context):
     '''
     left_ons, right_ons = [], []  # type: Tuple[List[str], List[str]]
     for element in join_condition:
-        element = cast(str, element)  # for mypy
         element_paths = context.get_all_canonical_paths((element,))
         if len(element_paths) != 2:
             raise ValueError(
@@ -215,6 +218,9 @@ def _join_on_arbitrary_condition(left_table,  # type: TypedDataFrame
     '''
     context.table = _cross_join(left_table, right_table)
     rows_to_keep = join_condition.evaluate(context)
+    if not isinstance(rows_to_keep, TypedSeries):
+        raise RuntimeError("join condition {} evaluated to a table rather than a column"
+                           .format(join_condition))
     result_dataframe = context.table.dataframe.loc[rows_to_keep.series]
     if pandas_join_type in ['left', 'outer']:
         result_dataframe = pd.concat(
@@ -288,7 +294,6 @@ class DataSource(AbstractSyntaxTreeNode):
 
         join_type = join_type.upper() if isinstance(join_type, str) else join_type
 
-        join_comparisons = _extract_simple_comparison(join_condition)
         pandas_join_type = self.BIGQUERY_TO_PANDAS_JOIN_TYPE.get(join_type)
         if pandas_join_type is None:
             raise NotImplementedError("Join type {} is not supported".format(join_type))
@@ -312,21 +317,22 @@ class DataSource(AbstractSyntaxTreeNode):
             left_ons, right_ons = _get_common_columns(table, join_table)
 
         # If join USING(list of fields) is specified.
-        elif (isinstance(join_condition, tuple)
-              and all(isinstance(element, str) for element in join_condition)):
+        elif isinstance(join_condition, tuple):
             left_ons, right_ons = _get_join_using(join_condition, join_table_id, context)
 
-        # If join ON (a = b AND c = d AND ...) is specified.
-        elif join_comparisons is not None:
-            left_ons, right_ons = _get_join_on_equality_comparisons(
-                    join_comparisons, join_table_id, context)
-
-        # The user can also join ON some arbitrary boolean condition, e.g. JOIN ON (a+b < c).
-        elif isinstance(join_condition, EvaluatableNode):
-            return _join_on_arbitrary_condition(table, join_table, join_condition, context,
-                                                pandas_join_type)
+        # If join ON is specified
         else:
-            raise ValueError("Invalid format for join condition {}".format(join_condition))
+            join_comparisons = _extract_simple_comparison(join_condition)
+
+            # If join ON (a = b AND c = d AND ...) is specified.
+            if join_comparisons is not None:
+                left_ons, right_ons = _get_join_on_equality_comparisons(
+                        join_comparisons, join_table_id, context)
+
+            # The user can also join ON some arbitrary boolean condition, e.g. JOIN ON (a+b < c).
+            else:
+                return _join_on_arbitrary_condition(table, join_table, join_condition, context,
+                                                    pandas_join_type)
 
         return TypedDataFrame(table.dataframe.merge(
                 join_table.dataframe, how=pandas_join_type, left_on=left_ons, right_on=right_ons),

@@ -30,7 +30,7 @@ the arguments to a function.
 from typing import Any, Callable, List, Optional, Tuple, Union  # noqa: F401
 
 from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     AppliedRuleOutputType, RuleType)
+                                     AppliedRuleNode, AppliedRuleOutputType, RuleType)
 from terminals import grammar_literal
 
 
@@ -67,7 +67,7 @@ def separated_sequence(rule,  # RuleType
         # type: (List[str]) -> AppliedRuleOutputType
         nodes = []
         # Initial value must be non-None but also have the correct type
-        maybe_separator = AbstractSyntaxTreeNode()
+        maybe_separator = AbstractSyntaxTreeNode()  # type: AppliedRuleNode
         tokens_after_separator = tokens
 
         while maybe_separator:

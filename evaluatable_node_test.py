@@ -14,13 +14,16 @@ import six
 from ddt import data, ddt, unpack
 
 from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE, EvaluatableNode,  # noqa: F401
-                                     EvaluationContext, Field, GroupedBy, _EmptyNode)
+from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
+                                     AbstractSyntaxTreeNode, EvaluatableNode, EvaluationContext,
+                                     Field, GroupedBy, _EmptyNode)
 from bq_types import BQScalarType, BQType, PythonType, TypedDataFrame, TypedSeries  # noqa: F401
-from dataframe_node import TableReference
+from dataframe_node import QueryExpression, Select, TableReference
+from evaluatable_node import LiteralType  # noqa: F401
 from evaluatable_node import (Case, Cast, Exists, Extract, FunctionCall, If, InCheck, Not,
                               NullCheck, Selector, UnaryNegation, Value)
 from grammar import select as select_rule
+from grammar import query_expression
 from query_helper import apply_rule
 from tokenizer import tokenize
 
@@ -58,11 +61,12 @@ class EvaluatableNodeTest(unittest.TestCase):
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = selector.evaluate(context)
+        typed_series = selector.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
 
-        self.assertEqual(list(dataframe.series), [[1], [2]])
-        self.assertEqual(list(dataframe.dataframe), ['field_alias'])
-        self.assertEqual(dataframe.types, [BQScalarType.INTEGER])
+        self.assertEqual(list(typed_series.series), [[1], [2]])
+        self.assertEqual(list(typed_series.dataframe), ['field_alias'])
+        self.assertEqual(typed_series.types, [BQScalarType.INTEGER])
 
     def test_selector_group_by_success(self):
         # type: () -> None
@@ -75,9 +79,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         context.exclude_aggregation = True
         updated_selector, = context.do_group_by([selector], [Field(('my_table', 'c'))])
 
-        dataframe = updated_selector.evaluate(context)
-
-        self.assertEqual(list(dataframe.series), [3])
+        typed_series = updated_selector.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [3])
 
     @data((5, BQScalarType.INTEGER),
           (1.23, BQScalarType.FLOAT),
@@ -86,11 +90,20 @@ class EvaluatableNodeTest(unittest.TestCase):
           (None, None))
     @unpack
     def test_value_repr(self, value, type_):
-        # type: (PythonType, Optional[BQType]) -> None
+        # type: (Optional[LiteralType], Optional[BQScalarType]) -> None
         '''Check Value's string representation'''
         node = Value(value, type_)
         representation = 'Value(type_={}, value={})'.format(type_.__repr__(), value.__repr__())
         self.assertEqual(node.__repr__(), representation)
+
+    @data((5, None),
+          (None, BQScalarType.INTEGER))
+    @unpack
+    def test_invalid_value(self, value, type_):
+        # type: (Optional[LiteralType], Optional[BQScalarType]) -> None
+        '''Check that None is only allowed as both value and type_ or neither.'''
+        with self.assertRaises(ValueError):
+            Value(value, type_)
 
     def test_value_eval(self):
         # type: () -> None
@@ -98,8 +111,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         value = Value(12345, BQScalarType.INTEGER)
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')), 'foo')
-        dataframe = value.evaluate(context)
-        self.assertEqual(list(dataframe.series), [12345, 12345])
+        typed_series = value.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [12345, 12345])
 
     def test_field(self):
         # type: () -> None
@@ -107,9 +121,10 @@ class EvaluatableNodeTest(unittest.TestCase):
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = field.evaluate(context)
-        self.assertEqual(list(dataframe.series), [[1], [2]])
-        self.assertEqual(dataframe.series.name, 'a')
+        typed_series = field.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [[1], [2]])
+        self.assertEqual(typed_series.series.name, 'a')
 
     @data(
         dict(function_name='sum', args=[Field(('a',))], expected_result=[3]),
@@ -135,6 +150,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         result = FunctionCall.create(function_name, args, EMPTY_NODE).evaluate(context)
+        assert isinstance(result, TypedSeries)
         self.assertEqual(
                 [result.type_.convert(elt) for elt in result.series],
                 expected_result)
@@ -166,6 +182,7 @@ class EvaluatableNodeTest(unittest.TestCase):
 
         tokens = tokenize('select {} from my_table group by b'.format(selectors))
         node, leftover = select_rule(tokens)
+        assert isinstance(node, Select)
         result, unused_table_name = node.get_dataframe(datasets)
         self.assertFalse(leftover)
         self.assertEqual(result.to_list_of_lists(), expected_result)
@@ -261,6 +278,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         }
         select, leftover = select_rule(tokenize('SELECT {} FROM my_table'.format(count)))
         self.assertFalse(leftover)
+        assert isinstance(select, Select)
         dataframe, unused_table_name = select.get_dataframe(count_datasets)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -285,8 +303,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         expression = Field(('b',))
         null_check = NullCheck(expression, direction)
 
-        dataframe = null_check.evaluate(context)
-        self.assertEqual(list(dataframe.series), result)
+        typed_series = null_check.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), result)
 
     @data(('IN', [True, False]), ('NOT_IN', [False, True]))
     @unpack
@@ -299,8 +318,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = in_check.evaluate(context)
-        self.assertEqual(list(dataframe.series), result)
+        typed_series = in_check.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), result)
 
     @data(
         (True, 0),
@@ -315,8 +335,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         # IF [condition] THEN 0 ELSE 1
         if_expression = If(condition, then, else_)
 
-        dataframe = if_expression.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(list(dataframe.series), [result])
+        typed_series = if_expression.evaluate(EMPTY_CONTEXT)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [result])
 
     def test_if(self):
         condition = BinaryExpression(Field(('a',)), '>', Value(1, BQScalarType.INTEGER))
@@ -328,8 +349,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = if_expression.evaluate(context)
-        self.assertEqual(list(dataframe.series), ['no', 'yes'])
+        typed_series = if_expression.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), ['no', 'yes'])
 
     def test_if_different_types(self):
         condition = Value(True, BQScalarType.BOOLEAN)
@@ -337,8 +359,8 @@ class EvaluatableNodeTest(unittest.TestCase):
         else_ = Value(1, BQScalarType.INTEGER)
         if_expression = If(condition, then, else_)
 
-        error = "Cannot implicitly coerce the given types: " \
-                "\(BQScalarType.STRING, BQScalarType.INTEGER\)"
+        error = (r"Cannot implicitly coerce the given types: "
+                 r"\(BQScalarType.STRING, BQScalarType.INTEGER\)")
         with self.assertRaisesRegexp(ValueError, error):
             if_expression.evaluate(EMPTY_CONTEXT)
 
@@ -357,8 +379,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         expression = Value(True, BQScalarType.BOOLEAN)
         not_expression = Not(expression)
 
-        dataframe = not_expression.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(list(dataframe.series), [False])
+        typed_series = not_expression.evaluate(EMPTY_CONTEXT)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [False])
 
     def test_not_type_error(self):
         expression = Value(5, BQScalarType.INTEGER)
@@ -377,8 +400,9 @@ class EvaluatableNodeTest(unittest.TestCase):
         expression = Value(initial_value, value_type)
         negation = UnaryNegation(expression)
 
-        dataframe = negation.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(list(dataframe.series), [result_value])
+        typed_series = negation.evaluate(EMPTY_CONTEXT)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [result_value])
 
     @data(
         ("abc", BQScalarType.STRING),
@@ -424,19 +448,21 @@ class EvaluatableNodeTest(unittest.TestCase):
         ),
     )
     @unpack
-    def test_case_with_comparand(self, comparand,  # type: Union[_EmptyNode, EvaluatableNode]
-                                 whens,  # type: List[Tuple[EvaluatableNode, EvaluatableNode]]
-                                 else_,  # type: EvaluatableNode
-                                 result  # type: List[str]
-                                 ):
+    def test_case_with_comparand(
+        self, comparand,  # type: Union[_EmptyNode, EvaluatableNode]
+        whens,  # type: List[Tuple[AbstractSyntaxTreeNode, EvaluatableNode]]
+        else_,  # type: EvaluatableNode
+        result  # type: List[str]
+    ):
         # type: (...) -> None
         case = Case(comparand, whens, else_)
 
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = case.evaluate(context)
-        self.assertEqual(list(dataframe.series), result)
+        typed_series = case.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), result)
 
     def test_case_no_whens(self):
         comparand = EMPTY_NODE
@@ -465,7 +491,7 @@ class EvaluatableNodeTest(unittest.TestCase):
     )
     @unpack
     def test_case_error(self, comparand,  # type: Union[_EmptyNode, EvaluatableNode]
-                        whens,  # type: List[Tuple[EvaluatableNode, EvaluatableNode]]
+                        whens,  # type: List[Tuple[AbstractSyntaxTreeNode, EvaluatableNode]]
                         else_,  # type: EvaluatableNode
                         error  # type: str
                         ):
@@ -571,6 +597,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         cast = Cast(value, cast_type)
 
         series = cast.evaluate(EMPTY_CONTEXT)
+        assert isinstance(series, TypedSeries)
         self.assertEqual(series.to_list(), [result])
 
     @data(
@@ -601,7 +628,7 @@ class EvaluatableNodeTest(unittest.TestCase):
     @unpack
     def test_cast_error(self, value, cast_type, error):
         # type: (Value, BQScalarType, str) -> None
-        cast = Cast(value, cast_type)
+        cast = Cast(value, cast_type.value)
 
         with self.assertRaisesRegexp(ValueError, error):
             cast.evaluate(EMPTY_CONTEXT)
@@ -613,17 +640,18 @@ class EvaluatableNodeTest(unittest.TestCase):
     @unpack
     def test_exists(self, select_query, result):
         # type: (str, List[bool]) -> None
-        select_node, leftover = apply_rule(select_rule, tokenize(select_query))
+        subquery_node, leftover = apply_rule(query_expression, tokenize(select_query))
+        assert isinstance(subquery_node, QueryExpression)
         self.assertFalse(leftover)
 
-        exists = Exists(select_node)
+        exists = Exists(subquery_node)
 
         context = EvaluationContext(self.small_datasets)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
-        dataframe = exists.evaluate(context)
-
-        self.assertEqual(list(dataframe.series), result)
+        typed_series = exists.evaluate(context)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), result)
 
     def test_exists_reference_outer(self):
         datasets = {
@@ -689,14 +717,15 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: (str, int) -> None
         extract = Extract(part, Value(pd.Timestamp('2019-05-09'), BQScalarType.TIMESTAMP))
 
-        dataframe = extract.evaluate(EMPTY_CONTEXT)
-        self.assertEqual(list(dataframe.series), [result])
+        typed_series = extract.evaluate(EMPTY_CONTEXT)
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [result])
 
     def test_extract_unimplemented(self):
         extract = Extract('WEEK(TUESDAY)',
                           Value(pd.Timestamp('2019-05-09'), BQScalarType.TIMESTAMP))
 
-        with self.assertRaisesRegexp(NotImplementedError, 'WEEK\(TUESDAY\) not implemented'):
+        with self.assertRaisesRegexp(NotImplementedError, r'WEEK\(TUESDAY\) not implemented'):
             extract.evaluate(EMPTY_CONTEXT)
 
 

@@ -11,9 +11,10 @@ from ddt import data, ddt, unpack
 from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import EMPTY_NODE, EvaluatableNode, Field, _EmptyNode  # noqa: F401
 from bq_types import BQScalarType
-from dataframe_node import Select
+from dataframe_node import DataSource, QueryExpression, Select, TableReference
 from evaluatable_node import (Case, Cast, Count, Exists, Extract, If, InCheck, Not, NullCheck,
-                              UnaryNegation, Value, _AggregatingFunctionCall)
+                              Selector, StarSelector, UnaryNegation, Value,
+                              _AggregatingFunctionCall)
 from grammar import core_expression, data_source, post_expression, query_expression, select
 
 
@@ -26,6 +27,7 @@ class GrammarTest(unittest.TestCase):
             ['SELECT', '*', 'FROM', '`my_project.my_dataset.my_table`'])
         self.assertEqual(leftover, [])
 
+        assert isinstance(ast, QueryExpression)
         self.assertEqual(ast.base_query.__class__, Select)
 
     def test_select(self):
@@ -33,10 +35,14 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = select(['SELECT', '*', 'FROM', '`my_project.my_dataset.my_table`'])
 
         self.assertEqual(leftover, [])
+        assert isinstance(ast, Select)
         self.assertEqual(ast.modifier, EMPTY_NODE)
+        assert isinstance(ast.fields[0], StarSelector)
         self.assertEqual(ast.fields[0].expression, EMPTY_NODE)
         self.assertEqual(ast.fields[0].exception, EMPTY_NODE)
         self.assertEqual(ast.fields[0].replacement, EMPTY_NODE)
+        assert isinstance(ast.from_, DataSource)
+        assert isinstance(ast.from_.first_from[0], TableReference)
         self.assertEqual(ast.from_.first_from[0].path, ('my_project', 'my_dataset', 'my_table'))
         self.assertEqual(ast.from_.first_from[1], EMPTY_NODE)
         self.assertEqual(ast.from_.joins, [])
@@ -50,6 +56,8 @@ class GrammarTest(unittest.TestCase):
                                 'AS', 'TableAlias'])
 
         self.assertEqual(leftover, [])
+        assert isinstance(ast, Select)
+        assert isinstance(ast.from_, DataSource)
         self.assertEqual(ast.from_.first_from[1], 'TableAlias')
 
     @data(
@@ -135,13 +143,16 @@ class GrammarTest(unittest.TestCase):
         # type: (...) -> None
         ast, leftover = data_source(tokens)
 
+        assert isinstance(ast, DataSource)
         self.assertEqual(leftover, [])
+        assert isinstance(ast.first_from[0], TableReference)
         self.assertEqual(ast.first_from[0].path, first_from_path)
         self.assertEqual(ast.first_from[1], first_from_alias)
         self.assertEqual(len(ast.joins), num_joins)
         if num_joins > 0:
             join = ast.joins[0]
             self.assertEqual(join[0], join_type)
+            assert isinstance(join[1][0], TableReference)
             self.assertEqual(join[1][0].path, join_table_path)
             self.assertEqual(join[1][1], join_table_alias)
             self.assertEqual(repr(join[2]), repr(join_conditions))
@@ -170,8 +181,10 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = select(tokens)
 
         self.assertEqual(leftover, [])
+        assert isinstance(ast, Select)
+        assert isinstance(ast.fields[0], Selector)
         field = ast.fields[0].children[0]
-        self.assertTrue(isinstance(field, Field))
+        assert isinstance(field, Field)
         self.assertEqual(field.path, path)
 
     def test_order_by(self):
@@ -179,7 +192,9 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = query_expression(['SELECT', '*', 'FROM', 'my_table',
                                           'ORDER', 'BY', 'a', 'ASC'])
 
+        assert isinstance(ast, QueryExpression)
         self.assertEqual(leftover, [])
+        assert not isinstance(ast.order_by, _EmptyNode)
         self.assertEqual(len(ast.order_by), 1)
         (field, direction) = ast.order_by[0]
         self.assertEqual(field.path, ('a',))
@@ -189,10 +204,13 @@ class GrammarTest(unittest.TestCase):
         # type: () -> None
         ast, leftover = query_expression(['SELECT', '*', 'FROM', 'my_table',
                                           'LIMIT', '5', 'OFFSET', '10'])
-
+        assert isinstance(ast, QueryExpression)
         self.assertEqual(leftover, [])
+        assert not isinstance(ast.limit, _EmptyNode)
         limit_expression, offset_expression = ast.limit
+        assert isinstance(limit_expression, Value)
         self.assertEqual(limit_expression.value, 5)
+        assert isinstance(offset_expression, Value)
         self.assertEqual(offset_expression.value, 10)
 
     def test_group_by(self):
@@ -200,8 +218,11 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = select(['SELECT', '*', 'FROM', 'my_table', 'GROUP', 'BY', 'a'])
 
         self.assertEqual(leftover, [])
+        assert isinstance(ast, Select)
+        assert not isinstance(ast.group_by, _EmptyNode)
         self.assertEqual(len(ast.group_by), 1)
         field = ast.group_by[0]
+        assert isinstance(field, Field)
         self.assertEqual(field.path, ('a',))
 
     def test_selector_alias(self):
@@ -209,8 +230,10 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = select(['SELECT', 'a', 'AS', 'field_name', 'FROM', 'my_table'])
 
         self.assertEqual(leftover, [])
+        assert isinstance(ast, Select)
         self.assertEqual(len(ast.fields), 1)
         selector = ast.fields[0]
+        assert isinstance(selector, Selector)
         alias = selector.alias
         self.assertEqual(alias, 'field_name')
 
@@ -279,6 +302,7 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(ast.children[1:], elements)
 
     def test_if(self):
+        # type: () -> None
         # IF (3 < 5, 0, 1)
         tokens = ['IF', '(', '3', '<', '5', ',', '0', ',', '1', ')']
 
@@ -295,6 +319,7 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(else_, Value(1, BQScalarType.INTEGER))
 
     def test_not(self):
+        # type: () -> None
         tokens = ['NOT', '2', '=', '2']
 
         ast, leftover = core_expression(tokens)
@@ -307,6 +332,7 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(right, Value(2, BQScalarType.INTEGER))
 
     def test_unary_negation(self):
+        # type: () -> None
         tokens = ['-', '2']
 
         ast, leftover = core_expression(tokens)
@@ -316,6 +342,7 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(ast.children[0], Value(2, BQScalarType.INTEGER))
 
     def test_case(self):
+        # type: () -> None
         tokens = ['CASE', 'WHEN', 'a', '=', '1', 'THEN', '1',
                   'WHEN', 'a', '=', '2', 'THEN', '2',
                   'ELSE', '3', 'END']
@@ -339,6 +366,7 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(else_, Value(3, BQScalarType.INTEGER))
 
     def test_cast(self):
+        # type: () -> None
         tokens = ['CAST', '(', '1', 'AS', 'STRING', ')']
         ast, leftover = core_expression(tokens)
 
@@ -348,15 +376,18 @@ class GrammarTest(unittest.TestCase):
         self.assertEqual(ast.type_, BQScalarType.STRING)
 
     def test_exists(self):
+        # type: () -> None
         tokens = ['EXISTS', '(', 'SELECT', '*', 'FROM', 'Table', ')']
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
         self.assertTrue(isinstance(ast, Exists))
-        self.assertTrue(isinstance(ast.select, Select))
-        self.assertEqual(ast.select.from_.first_from[0].path, ('Table',))
+        self.assertTrue(isinstance(ast.subquery, QueryExpression))
+        self.assertTrue(isinstance(ast.subquery.base_query, Select))
+        self.assertEqual(ast.subquery.base_query.from_.first_from[0].path, ('Table',))
 
     def test_extract(self):
+        # type: () -> None
         tokens = ['EXTRACT', '(', 'DAY', 'FROM', 'date_field', ')']
         ast, leftover = core_expression(tokens)
 

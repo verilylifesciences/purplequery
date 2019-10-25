@@ -9,10 +9,10 @@ from typing import List, Union  # noqa: F401
 
 from ddt import data, ddt, unpack
 
-from bq_abstract_syntax_tree import EvaluationContext
+from bq_abstract_syntax_tree import EvaluatableNode, EvaluationContext
 from bq_operator import (BINARY_OPERATOR_PATTERN, _reparse_binary_expression,
                          binary_operator_expression_rule)
-from bq_types import BQScalarType
+from bq_types import BQScalarType, TypedSeries
 from evaluatable_node import Value  # noqa: F401
 from terminals import literal
 
@@ -50,11 +50,14 @@ class BqOperatorTest(unittest.TestCase):
     @unpack
     def test_binary_expressions(self, expression_str, strexpr, result):
         # type: (str, str, int) -> None
-        tokens = re.findall('|'.join((BINARY_OPERATOR_PATTERN, '\d+')), expression_str)
+        tokens = re.findall('|'.join((BINARY_OPERATOR_PATTERN, r'\d+')), expression_str)
         node, leftover = binary_operator_expression_rule(literal)(tokens)
         self.assertFalse(leftover)
+        assert isinstance(node, EvaluatableNode)
         self.assertEqual(node.strexpr(), strexpr)
-        self.assertEqual(list(node.evaluate(context=EvaluationContext({})).series)[0], result)
+        typed_series = node.evaluate(context=EvaluationContext({}))
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series)[0], result)
 
     @data(
         ('12 / 3', 4),
@@ -88,11 +91,14 @@ class BqOperatorTest(unittest.TestCase):
     @unpack
     def test_binary_operators(self, expression_str, result):
         # type: (str, Union[int, bool]) -> None
-        tokens = re.findall('|'.join((BINARY_OPERATOR_PATTERN, '\d+\.\d+', '\d+', 'AND', 'OR')),
+        tokens = re.findall('|'.join((BINARY_OPERATOR_PATTERN, r'\d+\.\d+', r'\d+', 'AND', 'OR')),
                             expression_str)
         node, leftover = binary_operator_expression_rule(literal)(tokens)
         self.assertFalse(leftover)
-        self.assertEqual(list(node.evaluate(context=EvaluationContext({})).series)[0], result)
+        assert isinstance(node, EvaluatableNode)
+        typed_series = node.evaluate(context=EvaluationContext({}))
+        assert isinstance(typed_series, TypedSeries)
+        self.assertEqual(list(typed_series.series), [result])
 
     def test_even_length_sequence_raises(self):
         with self.assertRaisesRegexp(ValueError, 'Sequence must be of odd length'):

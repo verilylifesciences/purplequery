@@ -6,7 +6,7 @@
 '''All subclasses of DataframeNode'''
 
 import operator
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union  # noqa: F401
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union  # noqa: F401
 
 import pandas as pd
 
@@ -15,11 +15,15 @@ from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
                                      EvaluatableNode, EvaluationContext, Field,
                                      MarkerSyntaxTreeNode, _EmptyNode)
 from bq_types import BQType, TypedDataFrame, TypedSeries, implicitly_coerce  # noqa: F401
+from evaluatable_node import StarSelector  # noqa: F401
 from evaluatable_node import Selector, Value
 from join import DataSource  # noqa: F401
 from six.moves import reduce
 
 DEFAULT_TABLE_NAME = None
+
+_OrderByType = List[Tuple[Field, str]]
+_LimitType = Tuple[EvaluatableNode, EvaluatableNode]
 
 
 class QueryExpression(DataframeNode):
@@ -30,10 +34,10 @@ class QueryExpression(DataframeNode):
     '''
 
     def __init__(self,
-                 with_expression,  # type: List[Tuple[str, DataframeNode]]
+                 with_expression,  # type: Union[_EmptyNode, List[Tuple[str, DataframeNode]]]
                  base_query,  # type: DataframeNode
-                 order_by,  # type: AbstractSyntaxTreeNode
-                 limit,  # type: AbstractSyntaxTreeNode
+                 order_by,  # type: Union[_EmptyNode, _OrderByType]
+                 limit,  # type: Union[_EmptyNode, _LimitType]
                  ):
         # type: (...) -> None
         '''Set up QueryExpression node.
@@ -50,8 +54,8 @@ class QueryExpression(DataframeNode):
         self.order_by = order_by
         self.limit = limit
 
-    def _order_by(self, typed_dataframe, table_name, datasets):
-        # type: (TypedDataFrame, Optional[str], DatasetType) -> TypedDataFrame
+    def _order_by(self, order_by, typed_dataframe, table_name, datasets):
+        # type: (_OrderByType, TypedDataFrame, Optional[str], DatasetType) -> TypedDataFrame
         '''If ORDER BY is specified, sort the data by the given column(s)
         in the given direction(s).
 
@@ -68,7 +72,7 @@ class QueryExpression(DataframeNode):
         # order_by is a list of (field, direction) tuples to sort by
         fields = []
         directions = []  # ascending = True, descending = False
-        for field, direction in self.order_by:
+        for field, direction in order_by:
             if isinstance(field, Field):
                 path = '.'.join(context.get_canonical_path(field.path))
                 fields.append(path)
@@ -90,8 +94,8 @@ class QueryExpression(DataframeNode):
             context.table.dataframe.sort_values(fields, ascending=directions),
             context.table.types)
 
-    def _limit(self, typed_dataframe):
-        # type: (TypedDataFrame) -> TypedDataFrame
+    def _limit(self, limit, typed_dataframe):
+        # type: (_LimitType, TypedDataFrame) -> TypedDataFrame
         '''If limit is specified, only return that many rows.
         If offset is specified, start at that row number, not the first row.
 
@@ -100,14 +104,18 @@ class QueryExpression(DataframeNode):
         Returns:
             A new TypedDataFrame that conforms to the given limit and offset
         '''
-        limit_expression, offset_expression = self.limit
+        limit_expression, offset_expression = limit
 
         # Use empty context because the limit is a constant
         limit_value = limit_expression.evaluate(EMPTY_CONTEXT)
+        if not isinstance(limit_value, TypedSeries):
+            raise ValueError("invalid limit expression {}".format(limit_expression))
         limit, = limit_value.series
         if offset_expression is not EMPTY_NODE:
             # Use empty context because the offset is also a constant
             offset_value = offset_expression.evaluate(EMPTY_CONTEXT)
+            if not isinstance(offset_value, TypedSeries):
+                raise ValueError("invalid offset expression {}".format(offset_expression))
             offset, = offset_value.series
         else:
             offset = 0
@@ -115,19 +123,19 @@ class QueryExpression(DataframeNode):
             typed_dataframe.dataframe[offset:limit + offset],
             typed_dataframe.types)
 
-    def get_dataframe(self, datasets):
-        # type: (DatasetType) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, datasets, outer_context=None):
+        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
         if self.with_expression is not EMPTY_NODE:
             raise NotImplementedError("WITH expressions are not implemented yet.")
 
-        typed_dataframe, table_name = self.base_query.get_dataframe(datasets)
+        typed_dataframe, table_name = self.base_query.get_dataframe(datasets, outer_context)
 
-        if self.order_by is not EMPTY_NODE:
-            typed_dataframe = self._order_by(typed_dataframe, table_name, datasets)
+        if not isinstance(self.order_by, _EmptyNode):
+            typed_dataframe = self._order_by(self.order_by, typed_dataframe, table_name, datasets)
 
-        if self.limit is not EMPTY_NODE:
-            typed_dataframe = self._limit(typed_dataframe)
+        if not isinstance(self.limit, _EmptyNode):
+            typed_dataframe = self._limit(self.limit, typed_dataframe)
 
         return typed_dataframe, DEFAULT_TABLE_NAME
 
@@ -141,11 +149,11 @@ class SetOperation(DataframeNode):
         self.set_operator = set_operator
         self.right_query = right_query
 
-    def get_dataframe(self, datasets):
-        # type: (DatasetType) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, datasets, outer_context=None):
+        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
-        left_dataframe, unused_left_name = self.left_query.get_dataframe(datasets)
-        right_dataframe, unused_right_name = self.right_query.get_dataframe(datasets)
+        left_dataframe, unused_left_name = self.left_query.get_dataframe(datasets, outer_context)
+        right_dataframe, unused_right_name = self.right_query.get_dataframe(datasets, outer_context)
         num_left_columns = len(left_dataframe.types)
         num_right_columns = len(right_dataframe.types)
         if num_left_columns != num_right_columns:
@@ -163,7 +171,7 @@ class SetOperation(DataframeNode):
 
 
 def _evaluate_fields_as_dataframe(fields, context):
-    # type: (List[EvaluatableNode], EvaluationContext) -> TypedDataFrame
+    # type: (Sequence[EvaluatableNode], EvaluationContext) -> TypedDataFrame
     '''Evaluates a list of expressions and constructs a TypedDataFrame from the result.
 
     Args:
@@ -200,10 +208,10 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
     '''
 
     def __init__(self, modifier,  # type: AbstractSyntaxTreeNode
-                 fields,  # type: List[Selector]
+                 fields,  # type: Sequence[Union[Selector, StarSelector]]
                  from_,  # type: Union[_EmptyNode, DataSource]
                  where,  # type: Union[_EmptyNode, EvaluatableNode]
-                 group_by,  # type: Union[_EmptyNode, List[EvaluatableNode]]
+                 group_by,  # type: Union[_EmptyNode, List[Union[Value, Field]]]
                  having  # type: Union[_EmptyNode, EvaluatableNode]
                  ):
         # type: (...) -> None
@@ -224,7 +232,7 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         self.from_ = from_
         self.where = where
         if isinstance(group_by, _EmptyNode):
-            self.group_by = group_by
+            self.group_by = group_by  # type: Union[_EmptyNode, List[Field]]
         else:
             self.group_by = []
             for grouper in group_by:
@@ -273,21 +281,28 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         if not isinstance(self.where, _EmptyNode):
             # Filter table by WHERE condition
             rows_to_keep = self.where.evaluate(context)
+            if not isinstance(rows_to_keep, TypedSeries):
+                raise ValueError("Invalid WHERE expression {}".format(rows_to_keep))
             context.table = TypedDataFrame(
                 context.table.dataframe.loc[rows_to_keep.series],
                 context.table.types)
 
         if not isinstance(self.group_by, _EmptyNode):
-            self.fields = context.do_group_by(self.fields, self.group_by)
-        result = _evaluate_fields_as_dataframe(self.fields, context)
+            fields_for_evaluation = context.do_group_by(
+                self.fields, self.group_by)  # type: Sequence[EvaluatableNode]
+        else:
+            fields_for_evaluation = self.fields
+        result = _evaluate_fields_as_dataframe(fields_for_evaluation, context)
 
-        if self.having is not EMPTY_NODE:
+        if not isinstance(self.having, _EmptyNode):
             having_context = EvaluationContext(datasets)
             having_context.add_table_from_dataframe(result, None, EMPTY_NODE)
             having_context.add_subcontext(context)
             having_context.group_by_paths = context.group_by_paths
             having = self.having.mark_grouped_by(context.group_by_paths, having_context)
             rows_to_keep = having.evaluate(having_context)
+            if not isinstance(rows_to_keep, TypedSeries):
+                raise ValueError("Invalid HAVING expression {}".format(rows_to_keep))
             result = TypedDataFrame(result.dataframe.loc[rows_to_keep.series], result.types)
 
         return result, DEFAULT_TABLE_NAME
@@ -308,9 +323,10 @@ class TableReference(DataframeNode):
             path = tuple(split_path)
         self.path = path  # type: Tuple[str, ...]
 
-    def get_dataframe(self, datasets):
-        # type: (DatasetType) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, datasets, outer_context=None):
+        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
+        del outer_context  # Unused
         if len(self.path) < 3:
             # Table not fully qualified - attempt to resolve
             if len(datasets) != 1:

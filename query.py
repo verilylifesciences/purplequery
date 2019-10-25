@@ -9,6 +9,7 @@ import re
 
 from bq_abstract_syntax_tree import DatasetType  # noqa: F401
 from bq_types import TypedDataFrame  # noqa: F401
+from dataframe_node import QueryExpression
 from grammar import query_expression
 from query_helper import apply_rule
 from tokenizer import tokenize
@@ -48,6 +49,9 @@ def execute_query(query, datasets):
         tree, leftover = apply_rule(query_expression, tokens)
         if leftover:
             raise RuntimeError('Could not fully parse query: leftover tokens {!r}'.format(leftover))
+        if not isinstance(tree, QueryExpression):
+            raise RuntimeError('Parsing expression did not return appropriate data type: {!r}'
+                               .format(tree))
         typed_dataframe, _ = tree.get_dataframe(datasets)
     except Exception as e:
         first = e.args[0] if len(e.args) > 0 else ''

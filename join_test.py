@@ -14,7 +14,8 @@ from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa
 from bq_types import BQScalarType, TypedDataFrame
 from dataframe_node import TableReference
 from grammar import data_source
-from join import DataSource
+from join import ConditionsType  # noqa: F401
+from join import DataSource, Join
 from query_helper import apply_rule
 from tokenizer import tokenize
 
@@ -131,6 +132,7 @@ class JoinTest(unittest.TestCase):
                 join_type, 'USING (a)' if join_type not in (',', 'CROSS JOIN') else ''))
         data_source_node, leftover = apply_rule(data_source, tokens)
         self.assertFalse(leftover)
+        assert isinstance(data_source_node, DataSource)
         context = data_source_node.create_context(datasets)
 
         self.assertEqual(context.table.to_list_of_lists(), result)
@@ -176,6 +178,7 @@ class JoinTest(unittest.TestCase):
         tokens = tokenize('my_table {} my_table2 ON MOD(a + b, 3) = 0'.format(join_type))
         data_source_node, leftover = apply_rule(data_source, tokens)
         self.assertFalse(leftover)
+        assert isinstance(data_source_node, DataSource)
         context = data_source_node.create_context(datasets)
 
         self.assertEqual(context.table.to_list_of_lists(), result)
@@ -216,6 +219,7 @@ class JoinTest(unittest.TestCase):
                 'my_project.my_dataset.my_table join my_project.my_dataset.my_table2 on {}'.format(
                         condition)))
         self.assertFalse(leftover)
+        assert isinstance(data_source_node, DataSource)
         context = data_source_node.create_context(datasets)
 
         self.assertEqual(context.table.to_list_of_lists(), expected_result)
@@ -328,20 +332,20 @@ class JoinTest(unittest.TestCase):
             join_type='INNER',
             join_on=('b',),
             error_type=ValueError,
-            error="JOIN USING key must exist in exactly two tables; "
-                  "exists in these: \['my_table2'\]"
+            error=(r"JOIN USING key must exist in exactly two tables; "
+                   r"exists in these: \['my_table2'\]")
         ),
     )
     @unpack
     def test_data_source_join_error(self, join_type,  # type: str
-                                    join_on,  # type: Union[_EmptyNode, List[str]]
+                                    join_on,  # type: ConditionsType
                                     error_type,  # type: Type[BaseException]
                                     error  # type: str
                                     ):
         # type: (...) -> None
         initial_table = (TableReference(('my_project', 'my_dataset', 'my_table')), EMPTY_NODE)
         join_table = (TableReference(('my_project', 'my_dataset', 'my_table2')), EMPTY_NODE)
-        joins = [(join_type, join_table, join_on)]
+        joins = [Join(join_type, join_table, join_on)]
 
         data_source = DataSource(initial_table, joins)
         with self.assertRaisesRegexp(error_type, error):

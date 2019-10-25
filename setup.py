@@ -5,9 +5,7 @@
 
 """Package configuration."""
 
-import platform
-from setuptools import find_packages
-from setuptools import setup
+from setuptools import find_packages, setup
 
 REQUIRED_PACKAGES = ['numpy==1.13.3',
                      'pandas==0.20.3',
