@@ -9,7 +9,7 @@ from typing import List, Union  # noqa: F401
 
 from ddt import data, ddt, unpack
 
-from bq_abstract_syntax_tree import EvaluatableNode, EvaluationContext
+from bq_abstract_syntax_tree import EvaluatableNode, EvaluationContext, TableContext
 from bq_operator import (BINARY_OPERATOR_PATTERN, _reparse_binary_expression,
                          binary_operator_expression_rule)
 from bq_types import BQScalarType, TypedSeries
@@ -55,7 +55,7 @@ class BqOperatorTest(unittest.TestCase):
         self.assertFalse(leftover)
         assert isinstance(node, EvaluatableNode)
         self.assertEqual(node.strexpr(), strexpr)
-        typed_series = node.evaluate(context=EvaluationContext({}))
+        typed_series = node.evaluate(context=EvaluationContext(TableContext()))
         assert isinstance(typed_series, TypedSeries)
         self.assertEqual(list(typed_series.series)[0], result)
 
@@ -96,7 +96,7 @@ class BqOperatorTest(unittest.TestCase):
         node, leftover = binary_operator_expression_rule(literal)(tokens)
         self.assertFalse(leftover)
         assert isinstance(node, EvaluatableNode)
-        typed_series = node.evaluate(context=EvaluationContext({}))
+        typed_series = node.evaluate(context=EvaluationContext(TableContext()))
         assert isinstance(typed_series, TypedSeries)
         self.assertEqual(list(typed_series.series), [result])
 

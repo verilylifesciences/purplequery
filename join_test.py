@@ -10,7 +10,7 @@ import pandas as pd
 from ddt import data, ddt, unpack
 
 from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     EvaluationContext, _EmptyNode)
+                                     DatasetTableContext, EvaluationContext, _EmptyNode)
 from bq_types import BQScalarType, TypedDataFrame
 from dataframe_node import TableReference
 from grammar import data_source
@@ -25,7 +25,7 @@ class JoinTest(unittest.TestCase):
 
     def setUp(self):
         # type: () -> None
-        self.datasets = {
+        self.table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -38,12 +38,12 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
 
     def test_data_source(self):
         data_source = DataSource((TableReference(('my_project', 'my_dataset', 'my_table')),
                                   EMPTY_NODE), [])
-        data_source_context = data_source.create_context(self.datasets)
+        data_source_context = data_source.create_context(self.table_context)
 
         self.assertEqual(data_source_context.table.to_list_of_lists(), [[1], [2]])
         self.assertEqual(list(data_source_context.table.dataframe), ['my_table.a'])
@@ -114,7 +114,7 @@ class JoinTest(unittest.TestCase):
                                result  # type: List[List[int]]
                                ):
         # type: (...) -> None
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -127,13 +127,13 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         tokens = tokenize('my_table {} my_table2 {}'.format(
                 join_type, 'USING (a)' if join_type not in (',', 'CROSS JOIN') else ''))
         data_source_node, leftover = apply_rule(data_source, tokens)
         self.assertFalse(leftover)
         assert isinstance(data_source_node, DataSource)
-        context = data_source_node.create_context(datasets)
+        context = data_source_node.create_context(table_context)
 
         self.assertEqual(context.table.to_list_of_lists(), result)
         self.assertEqual(list(context.table.dataframe),
@@ -161,7 +161,7 @@ class JoinTest(unittest.TestCase):
                                                 result  # type: List[List[int]]
                                                 ):
         # type: (...) -> None
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -174,12 +174,12 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         tokens = tokenize('my_table {} my_table2 ON MOD(a + b, 3) = 0'.format(join_type))
         data_source_node, leftover = apply_rule(data_source, tokens)
         self.assertFalse(leftover)
         assert isinstance(data_source_node, DataSource)
-        context = data_source_node.create_context(datasets)
+        context = data_source_node.create_context(table_context)
 
         self.assertEqual(context.table.to_list_of_lists(), result)
 
@@ -200,7 +200,7 @@ class JoinTest(unittest.TestCase):
     @unpack
     def test_data_source_join_on_field_comparison(self, condition, expected_result):
         # type: (str, List[List[int]]) -> None
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -213,21 +213,21 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         data_source_node, leftover = data_source(
             tokenize(
                 'my_project.my_dataset.my_table join my_project.my_dataset.my_table2 on {}'.format(
                         condition)))
         self.assertFalse(leftover)
         assert isinstance(data_source_node, DataSource)
-        context = data_source_node.create_context(datasets)
+        context = data_source_node.create_context(table_context)
 
         self.assertEqual(context.table.to_list_of_lists(), expected_result)
         self.assertEqual(list(context.table.dataframe),
                          ['my_table.a', 'my_table.b', 'my_table2.c', 'my_table2.d'])
 
     def test_data_source_join_overlapping_fields(self):
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -240,7 +240,7 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         initial_table = (TableReference(('my_project', 'my_dataset', 'my_table')), EMPTY_NODE)
         join_type = 'INNER'
         join_table = (TableReference(('my_project', 'my_dataset', 'my_table2')), EMPTY_NODE)
@@ -248,14 +248,14 @@ class JoinTest(unittest.TestCase):
         joins = [(join_type, join_table, join_on)]
 
         data_source = DataSource(initial_table, joins)
-        context = data_source.create_context(datasets)
+        context = data_source.create_context(table_context)
 
         self.assertEqual(context.table.to_list_of_lists(), [[1, 9, 1, 2]])
         self.assertEqual(list(context.table.dataframe),
                          ['my_table.a', 'my_table.b', 'my_table2.a', 'my_table2.d'])
 
     def test_data_source_join_multiple_columns(self):
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -268,7 +268,7 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         initial_table = (TableReference(('my_project', 'my_dataset', 'my_table')), EMPTY_NODE)
         join_type = 'FULL'
         join_table = (TableReference(('my_project', 'my_dataset', 'my_table2')), EMPTY_NODE)
@@ -276,7 +276,7 @@ class JoinTest(unittest.TestCase):
         joins = [(join_type, join_table, join_on)]
 
         data_source = DataSource(initial_table, joins)
-        context = data_source.create_context(datasets)
+        context = data_source.create_context(table_context)
 
         result = [
             [1, 2, 3, 1, 2, 7],
@@ -286,7 +286,7 @@ class JoinTest(unittest.TestCase):
         self.assertEqual(context.table.to_list_of_lists(), result)
 
     def test_data_source_join_multiple_joins(self):
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -303,7 +303,7 @@ class JoinTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         initial_table = (TableReference(('my_project', 'my_dataset', 'my_table')), EMPTY_NODE)
         join_type = 'FULL'
         join_table2 = (TableReference(('my_project', 'my_dataset', 'my_table2')), EMPTY_NODE)
@@ -311,7 +311,7 @@ class JoinTest(unittest.TestCase):
         joins = [(join_type, join_table2, ('a',)),
                  (join_type, join_table3, ('b',))]
         data_source = DataSource(initial_table, joins)
-        context = data_source.create_context(datasets)
+        context = data_source.create_context(table_context)
 
         result = [
             [1, 2, 3, 1, 8, 9, None, None, None],
@@ -349,7 +349,7 @@ class JoinTest(unittest.TestCase):
 
         data_source = DataSource(initial_table, joins)
         with self.assertRaisesRegexp(error_type, error):
-            data_source.create_context(self.datasets)
+            data_source.create_context(self.table_context)
 
 
 if __name__ == '__main__':

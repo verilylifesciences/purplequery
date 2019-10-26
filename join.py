@@ -16,8 +16,8 @@ import pandas as pd
 
 from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     DataframeNode, DatasetType, EvaluatableNode, EvaluationContext,
-                                     Field, _EmptyNode)
+                                     DataframeNode, EvaluatableNode, EvaluationContext, Field,
+                                     TableContext, _EmptyNode)
 from bq_types import TypedDataFrame, TypedSeries  # noqa: F401
 
 # column name of ephemeral key added to implement a cross join with pandas merge.
@@ -338,12 +338,12 @@ class DataSource(AbstractSyntaxTreeNode):
                 join_table.dataframe, how=pandas_join_type, left_on=left_ons, right_on=right_ons),
                               table.types + join_table.types)
 
-    def create_context(self, datasets):
-        # type: (DatasetType) -> EvaluationContext
+    def create_context(self, table_context):
+        # type: (TableContext) -> EvaluationContext
         '''Given a representation of the entire database, add the specified
         table(s) to the query's context.
         '''
-        context = EvaluationContext(datasets)
+        context = EvaluationContext(table_context)
         table, _ = context.add_table_from_node(*self.first_from)
 
         for join_type, join_with_alias, join_condition in self.joins:

@@ -347,6 +347,74 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
         return self
 
 
+class TableContext(object):
+    '''Context for resolving a name or path to a table (TypedDataFrame).
+
+    Typically applied in a FROM statement.
+
+    Contrast with EvaluationContext, whose purpose is to resolve a name to a column (TypedSeries).
+    '''
+
+    def lookup(self, path):
+        # type: (Tuple[str, ...]) -> Tuple[TypedDataFrame, Optional[str]]
+        '''Look up a path to a table in this context.
+
+        Args:
+            path: A tuple of strings representing a period-separated path to a table, like
+                projectname.datasetname.tablename, or just tablename
+
+        Returns:
+            The table of data (TypedDataframe) found, and its name.
+        '''
+        raise KeyError("Cannot resolve table `{}`".format('.'.join(path)))
+
+
+class DatasetTableContext(TableContext):
+    '''A TableContext containing a set of datasets.'''
+
+    def __init__(self, datasets):
+        # type: (DatasetType) -> None
+        '''Construct the TableContext.
+
+        Args:
+            datasets: A series of nested dictionaries mapping to a TypedDataFrame.
+            For example, {'my_project': {'my_dataset': {'table1': t1, 'table2': t2}}},
+            where t1 and t2 are two-dimensional TypeDataFrames representing a table.
+        '''
+        self.datasets = datasets
+
+    def lookup(self, path):
+        # type: (Tuple[str, ...]) -> Tuple[TypedDataFrame, Optional[str]]
+        '''See TableContext.lookup for docstring.'''
+        if not self.datasets:
+            raise ValueError("Attempt to look up path {} with no projects/datasets/tables given."
+                             .format(path))
+        if len(path) < 3:
+            # Table not fully qualified - attempt to resolve
+            if len(self.datasets) != 1:
+                raise ValueError("Non-fully-qualified table {} with multiple possible projects {}"
+                                 .format(path, sorted(self.datasets.keys())))
+            project, = self.datasets.keys()
+
+            if len(path) == 1:
+                # No dataset specified, only table
+                if len(self.datasets[project]) != 1:
+                    raise ValueError(
+                            "Non-fully-qualified table {} with multiple possible datasets {}"
+                            .format(path, sorted(self.datasets[project].keys())))
+                dataset, = self.datasets[project].keys()
+                path = (project, dataset) + path
+            else:
+                # Dataset and table both specified
+                path = (project,) + path
+
+        if len(path) > 3:
+            raise ValueError("Invalid path has more than three parts: {}".format(path))
+        project_id, dataset_id, table_id = path
+
+        return self.datasets[project_id][dataset_id][table_id], table_id
+
+
 class DataframeNode(AbstractSyntaxTreeNode):
     '''Abstract Syntax Tree Nodes that have a get_dataframe() method.
 
@@ -354,8 +422,8 @@ class DataframeNode(AbstractSyntaxTreeNode):
     can be JOINed to another DataframeNode.
     '''
 
-    def get_dataframe(self, datasets, outer_context=None):
-        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''Scope the given datasets by the criteria specified in the
         instance's fields.
 
@@ -459,17 +527,21 @@ EMPTY_NODE = _EmptyNode()
 
 
 class EvaluationContext:
-    '''Representation of the tables that are in the query's scope.
-    The `datasets` field contains all the data that is available in the database.'''
+    '''Context for resolving a name to a column (TypedSeries).
 
-    def __init__(self, datasets):
-        # type: (DatasetType) -> None
+    An EvaluationContext is a representation of columns in all the tables that
+    are in the query's scope.  Typically used in the context of SELECT, WHERE, etc.
+
+    Contrast with TableContext, whose purpose is to resolve a name to a table (TypedDataFrame),
+    and contains all the tables (all the data) that is available in the database.
+    '''
+
+    def __init__(self, table_context):
+        # type: (TableContext) -> None
         '''Initialize a context.
 
         Args:
-            datasets: A series of nested dictionaries mapping to a TypedDataFrame.
-            For example, {'my_project': {'my_dataset': {'table1': t1, 'table2': t2}}},
-            where t1 and t2 are two-dimensional TypeDataFrames representing a table.
+            table_context: All tables visible to be queried.
         '''
 
         # We don't want an actual empty dataframe because with no FROMed tables, we
@@ -483,7 +555,7 @@ class EvaluationContext:
         self.column_to_table_ids = collections.defaultdict(list)  # type: Dict[str, List[str]]
 
         # All the available datasets (not necessarily all present in this context, yet)
-        self.datasets = datasets  # type: DatasetType
+        self.table_context = table_context
 
         # Table ids included in this context.
         self.table_ids = set()  # type: Set[str]
@@ -596,7 +668,7 @@ class EvaluationContext:
             (TypedDataFrame) and its name/label.
         '''
 
-        table, table_id = from_item.get_dataframe(self.datasets)
+        table, table_id = from_item.get_dataframe(self.table_context)
         return self.add_table_from_dataframe(table, table_id, alias)
 
     def add_table_from_dataframe(self, table,  # type: TypedDataFrame
@@ -659,7 +731,7 @@ class EvaluationContext:
                                                  old_context.table.dataframe.columns)]):
             raise ValueError('Columns differ when cloning context with new table: {} vs {}'.format(
                 table.dataframe.columns, old_context.table.dataframe.columns))
-        new_context = cls(old_context.datasets)
+        new_context = cls(old_context.table_context)
         new_context.table = table
         new_context.canonical_column_to_type = old_context.canonical_column_to_type
         new_context.column_to_table_ids = old_context.column_to_table_ids
@@ -752,4 +824,4 @@ class EvaluationContext:
         return TypedSeries(series, type_)
 
 
-EMPTY_CONTEXT = EvaluationContext({})
+EMPTY_CONTEXT = EvaluationContext(TableContext())
