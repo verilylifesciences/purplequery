@@ -127,18 +127,34 @@ accurately transmitted back to the caller.
 BQType           # Base class of all types
 |\
 | BQScalarType   # A scalar type - integer, float, etc.
-|\
+ \
   BQArray        # Array (aka Repeated) type - an array of scalars.
 ```
 
-## Miscellaneous
-
-The following types are not part of any of the above hierarchies.
+In addition, these two types annotate Pandas types with the BigQuery type stored
+in them.
 
 - TypedSeries: a column of data, and its type
 - TypedDataFrame: a table of data, and its types.
-- EvaluationContext: the data needed to evaluate expressions.  To turn
+
+## Context classes.
+
+Context classes are used to resolve identifiers during evaluation; i.e. to turn
+a user-specified name into an actual column or table of data.
+
+### Table contexts
+
+```
+TableContext           # Base class of contexts that resolve references to tables
+|\
+| DatasetTableContext  # Table context based on a dictionary of project/dataset/table names.
+ \
+  WithTableContext     # Table context based on tables introduced by WITH statements.
+```
+
+### Column context
+
+`EvaluationContext` represents the data needed to evaluate expressions.  To turn
   'select a+b, c from table1, table2' into an actual table of numbers,
   an EvaluationContext holds the actual columns of data corresponding to a, b,
   and c.
-

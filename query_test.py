@@ -308,9 +308,10 @@ class QueryTest(unittest.TestCase):
         '''A nonsensical query, to trigger "Could not fully parse query"'''
 
         sql_query = 'a b c'
-        expected_error = "Could not fully parse query: leftover tokens \\['a', 'b', 'c'\\]\n" \
-            "simplified query 'a b c'\n" \
-            "raw query 'a b c'"
+        expected_error = (
+            "Could not fully parse query: leftover tokens \\['a', 'b', 'c'\\]\n"
+            "simplified query 'a b c'\n"
+            "raw query 'a b c'")
         with self.assertRaisesRegexp(RuntimeError, expected_error):
             query.execute_query(sql_query, self.datasets)
 
@@ -318,10 +319,8 @@ class QueryTest(unittest.TestCase):
         '''Issue a query with insufficient context, to trigger general Exception catch'''
 
         sql_query = 'SELECT * FROM SomeTable'
-        expected_error = "Non-fully-qualified table \\('SomeTable',\\) with multiple " \
-            "possible projects \\[\\]\n" \
-            "simplified query 'SELECT \\* FROM SomeTable'\n" \
-            "raw query 'SELECT \\* FROM SomeTable'"
+        expected_error = (r"Attempt to look up path \('SomeTable',\) "
+                          r"with no projects/datasets/tables given")
         with self.assertRaisesRegexp(ValueError, expected_error):
             query.execute_query(sql_query, {})
 

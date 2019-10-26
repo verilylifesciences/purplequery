@@ -10,7 +10,8 @@ import pandas as pd
 from ddt import data, ddt, unpack
 
 from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import EMPTY_NODE, EvaluatableNode, Field  # noqa: F401
+from bq_abstract_syntax_tree import (EMPTY_NODE, DatasetTableContext, EvaluatableNode,  # noqa: F401
+                                     Field)
 from bq_types import BQScalarType, TypedDataFrame
 from dataframe_node import QueryExpression, Select, TableReference
 from evaluatable_node import Selector, StarSelector, Value
@@ -25,8 +26,9 @@ class DataframeNodeTest(unittest.TestCase):
 
     def setUp(self):
         # type: () -> None
-        self.datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame([[1], [2], [3]], columns=['a']), types=[BQScalarType.INTEGER])}}}
+        self.table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame([[1], [2], [3]], columns=['a']), types=[BQScalarType.INTEGER])}}})
 
     def test_marker_syntax_tree_node(self):
         # type: () -> None
@@ -39,7 +41,7 @@ class DataframeNodeTest(unittest.TestCase):
         selector = StarSelector(EMPTY_NODE, EMPTY_NODE, EMPTY_NODE)
         select = Select(EMPTY_NODE, [selector], from_, EMPTY_NODE, EMPTY_NODE, EMPTY_NODE)
         qe = QueryExpression(EMPTY_NODE, select, EMPTY_NODE, EMPTY_NODE)
-        dataframe, table_name = qe.get_dataframe(self.datasets)
+        dataframe, table_name = qe.get_dataframe(self.table_context)
 
         self.assertEqual(table_name, None)
         self.assertEqual(dataframe.to_list_of_lists(), [[1], [2], [3]])
@@ -56,7 +58,7 @@ class DataframeNodeTest(unittest.TestCase):
         limit = Value(1, BQScalarType.INTEGER)
         offset = Value(1, BQScalarType.INTEGER)
         qe = QueryExpression(EMPTY_NODE, select, EMPTY_NODE, (limit, offset))
-        dataframe, table_name = qe.get_dataframe(self.datasets)
+        dataframe, table_name = qe.get_dataframe(self.table_context)
 
         self.assertEqual(dataframe.to_list_of_lists(), [[2]])
 
@@ -68,16 +70,17 @@ class DataframeNodeTest(unittest.TestCase):
     )
     @unpack
     def test_query_expression_set_operation(self, query_expression, expected_result):
-        datasets = {'my_project':
-                    {'my_dataset':
-                     {'my_table':
-                      TypedDataFrame(pd.DataFrame([[1, 2, 3]],
-                                                  columns=['a', 'b', 'c']),
-                                     [BQScalarType.INTEGER,
-                                      BQScalarType.INTEGER,
-                                      BQScalarType.INTEGER])}}}
+        table_context = DatasetTableContext(
+            {'my_project':
+             {'my_dataset':
+              {'my_table':
+               TypedDataFrame(pd.DataFrame([[1, 2, 3]],
+                                           columns=['a', 'b', 'c']),
+                              [BQScalarType.INTEGER,
+                               BQScalarType.INTEGER,
+                               BQScalarType.INTEGER])}}})
         query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
-        dataframe, unused_table_name = query_expression_node.get_dataframe(datasets)
+        dataframe, unused_table_name = query_expression_node.get_dataframe(table_context)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -89,18 +92,64 @@ class DataframeNodeTest(unittest.TestCase):
     )
     @unpack
     def test_query_expression_set_operation_error(self, query_expression, error):
-        datasets = {'my_project':
-                    {'my_dataset':
-                     {'my_table':
-                      TypedDataFrame(pd.DataFrame([[1, 2, 3]],
-                                                  columns=['a', 'b', 'c']),
-                                     [BQScalarType.INTEGER,
-                                      BQScalarType.INTEGER,
-                                      BQScalarType.INTEGER])}}}
+        table_context = DatasetTableContext(
+            {'my_project':
+             {'my_dataset':
+              {'my_table':
+               TypedDataFrame(pd.DataFrame([[1, 2, 3]],
+                                           columns=['a', 'b', 'c']),
+                              [BQScalarType.INTEGER,
+                               BQScalarType.INTEGER,
+                               BQScalarType.INTEGER])}}})
         query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
         self.assertFalse(leftover)
         with self.assertRaisesRegexp(ValueError, error):
-            query_expression_node.get_dataframe(datasets)
+            query_expression_node.get_dataframe(table_context)
+
+    @data(
+        dict(
+            query_expression='WITH q1 as (SELECT a+1 as b FROM my_table) SELECT * from q1',
+            expected_result=[[2], [3], [4]]),
+        # This example is closely based on
+        # https://cloud.google.com/bigquery/docs/reference/standard-sql/query-syntax#with-clause
+        dict(query_expression=(
+            'WITH q1 AS (SELECT a+1 as b FROM my_table LIMIT 1)'  # q1 is [[2]]
+            'SELECT *'
+            'FROM'
+            '  (WITH q2 AS (SELECT b+1 as c FROM q1),'  # q1 resolves to [[2]]
+            '        q3 AS (SELECT b+2 as d FROM q1),'  # q1 resolves to [[2]]
+            '        q1 AS (SELECT b+4 as e FROM q1),'  # q1 (in the query) resolves to [[2]]
+            '        q4 AS (SELECT e+8 as f FROM q1)'   # q1 resolves to the WITH subquery
+                                                        # on the previous line.
+            '   SELECT e, c, d, f FROM q1, q2, q3, q4)'),  # q1 resolves to 3rd inner WITH subquery.
+            expected_result=[[6, 3, 4, 14]],
+        ),
+    )
+    @unpack
+    def test_with_clause(self, query_expression, expected_result):
+        # type: (str, List[List[int]]) -> None
+        query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
+        self.assertFalse(leftover)
+        assert isinstance(query_expression_node, QueryExpression)
+        dataframe, _ = query_expression_node.get_dataframe(self.table_context)
+        self.assertEqual(dataframe.to_list_of_lists(), expected_result)
+
+    @data(
+        dict(
+            query_expression=(
+                'WITH q1 as (SELECT a+1 as b FROM my_table),'
+                'q1 as (SELECT a+2 as b FROM my_table)'
+                'SELECT * from q1'),
+            error='Duplicate names in WITH clauses are not allowed'),
+    )
+    @unpack
+    def test_with_clause_error(self, query_expression, error):
+        # type: (str, str) -> None
+        query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
+        self.assertFalse(leftover)
+        assert isinstance(query_expression_node, QueryExpression)
+        with self.assertRaisesRegexp(ValueError, error):
+            query_expression_node.get_dataframe(self.table_context)
 
     # constants for use in data-driven syntax tests below
     with_clause = 'with foo as (select 1), bar as (select 2)'
@@ -158,7 +207,7 @@ class DataframeNodeTest(unittest.TestCase):
         # type: (str, List[List[int]]) -> None
         query_expression_node, leftover = query_expression_rule(tokenize(query_expression))
         assert isinstance(query_expression_node, QueryExpression)
-        dataframe, unused_table_name = query_expression_node.get_dataframe(self.datasets)
+        dataframe, unused_table_name = query_expression_node.get_dataframe(self.table_context)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -168,7 +217,7 @@ class DataframeNodeTest(unittest.TestCase):
                             EMPTY_NODE), [])
         selector = StarSelector(EMPTY_NODE, EMPTY_NODE, EMPTY_NODE)
         select = Select(EMPTY_NODE, [selector], from_, EMPTY_NODE, EMPTY_NODE, EMPTY_NODE)
-        dataframe, table_name = select.get_dataframe(self.datasets)
+        dataframe, table_name = select.get_dataframe(self.table_context)
 
         self.assertEqual(table_name, None)
         self.assertEqual(dataframe.to_list_of_lists(), [[1], [2], [3]])
@@ -198,15 +247,16 @@ class DataframeNodeTest(unittest.TestCase):
     @unpack
     def test_select_group_by(self, select, expected_result):
         # type: (str, List[List[int]]) -> None
-        group_datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame(
-                [[1, 2, 3], [1, 3, 3]],
-                columns=['a', 'b', 'c']),
-            types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
-        )}}}
+        group_table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame(
+                    [[1, 2, 3], [1, 3, 3]],
+                    columns=['a', 'b', 'c']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
+            )}}})
         select_node, leftover = select_rule(tokenize(select))
         assert isinstance(select_node, Select)
-        dataframe, unused_table_name = select_node.get_dataframe(group_datasets)
+        dataframe, unused_table_name = select_node.get_dataframe(group_table_context)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -220,17 +270,18 @@ class DataframeNodeTest(unittest.TestCase):
     @unpack
     def test_select_group_by_error(self, select):
         # type: (str) -> None
-        group_datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame(
-                [[1, 2, 3], [1, 3, 3]],
-                columns=['a', 'b', 'c']),
-            types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
-        )}}}
+        group_table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame(
+                    [[1, 2, 3], [1, 3, 3]],
+                    columns=['a', 'b', 'c']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]
+            )}}})
         select_node, leftover = select_rule(tokenize(select))
         assert isinstance(select_node, Select)
         self.assertFalse(leftover)
         with self.assertRaisesRegexp(ValueError, "not aggregated or grouped by"):
-            select_node.get_dataframe(group_datasets)
+            select_node.get_dataframe(group_table_context)
 
     @data(
         dict(select='select distinct a from my_table', expected_result=[[1]]),
@@ -240,15 +291,16 @@ class DataframeNodeTest(unittest.TestCase):
     @unpack
     def test_select_distinct(self, select, expected_result):
         # type: (str, List[List[int]]) -> None
-        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame(
-                [[1, 2], [1, 3]],
-                columns=['a', 'b']),
-            types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
-        )}}}
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame(
+                    [[1, 2], [1, 3]],
+                    columns=['a', 'b']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
+            )}}})
         select_node, leftover = select_rule(tokenize(select))
         assert isinstance(select_node, Select)
-        dataframe, unused_table_name = select_node.get_dataframe(datasets)
+        dataframe, unused_table_name = select_node.get_dataframe(table_context)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -264,18 +316,19 @@ class DataframeNodeTest(unittest.TestCase):
     @unpack
     def test_select_where(self, where):
         # type: (EvaluatableNode) -> None
-        where_datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame(
-                [[1, 2], [3, 4]],
-                columns=['a', 'b']),
-            types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
-        )}}}
+        where_table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame(
+                    [[1, 2], [3, 4]],
+                    columns=['a', 'b']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
+            )}}})
 
         fields = [Selector(Field(('a',)), EMPTY_NODE)]
         from_ = DataSource((TableReference(('my_project', 'my_dataset', 'my_table')),
                             EMPTY_NODE), [])
         select = Select(EMPTY_NODE, fields, from_, where, EMPTY_NODE, EMPTY_NODE)
-        dataframe, table_name = select.get_dataframe(where_datasets)
+        dataframe, table_name = select.get_dataframe(where_table_context)
 
         self.assertEqual(dataframe.to_list_of_lists(), [[3]])
 
@@ -292,16 +345,17 @@ class DataframeNodeTest(unittest.TestCase):
     @unpack
     def test_select_having(self, select, expected_result):
         # type: (str, List[List[int]]) -> None
-        group_datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
-            pd.DataFrame(
-                [[1, 3], [6, 3], [4, 5], [-100, 1], [2, 1]],
-                columns=['a', 'b']),
-            types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
-        )}}}
+        group_table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame(
+                    [[1, 3], [6, 3], [4, 5], [-100, 1], [2, 1]],
+                    columns=['a', 'b']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER]
+            )}}})
 
         select_node, leftover = select_rule(tokenize(select))
         assert isinstance(select_node, Select)
-        dataframe, unused_table_name = select_node.get_dataframe(group_datasets)
+        dataframe, unused_table_name = select_node.get_dataframe(group_table_context)
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
@@ -313,7 +367,7 @@ class DataframeNodeTest(unittest.TestCase):
     def test_table_reference(self, reference):
         # type: (Tuple[str, ...]) -> None
         table_ref = TableReference(reference)
-        dataframe, table_name = table_ref.get_dataframe(self.datasets)
+        dataframe, table_name = table_ref.get_dataframe(self.table_context)
 
         self.assertEqual(table_name, 'my_table')
         self.assertEqual(dataframe.to_list_of_lists(), [[1], [2], [3]])
@@ -322,33 +376,33 @@ class DataframeNodeTest(unittest.TestCase):
 
     def test_table_reference_multi_project(self):
         # type: () -> None
-        new_datasets = {
+        new_table_context = DatasetTableContext({
             'project1': {
                 'dataset1': {'table1': TypedDataFrame(pd.DataFrame(), [])}
             },
             'project2': {
                 'dataset2': {'table2': TypedDataFrame(pd.DataFrame(), [])}
             }
-        }
+        })
         table_ref = TableReference(('dataset1', 'table1'))
         expected_error = "Non-fully-qualified table \\('dataset1', 'table1'\\) with multiple "\
             "possible projects \\['project1', 'project2'\\]"
         with self.assertRaisesRegexp(ValueError, expected_error):
-            table_ref.get_dataframe(new_datasets)
+            table_ref.get_dataframe(new_table_context)
 
     def test_table_reference_multi_dataset(self):
         # type: () -> None
-        new_datasets = {
+        new_table_context = DatasetTableContext({
             'project1': {
                 'dataset1': {'table1': TypedDataFrame(pd.DataFrame(), [])},
                 'dataset2': {'table2': TypedDataFrame(pd.DataFrame(), [])}
             },
-        }
+        })
         table_ref = TableReference(('table1',))
         expected_error = "Non-fully-qualified table \\('table1',\\) with multiple possible "\
             "datasets \\['dataset1', 'dataset2'\\]"
         with self.assertRaisesRegexp(ValueError, expected_error):
-            table_ref.get_dataframe(new_datasets)
+            table_ref.get_dataframe(new_table_context)
 
 
 if __name__ == '__main__':

@@ -15,8 +15,8 @@ from ddt import data, ddt, unpack
 
 from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
-                                     AbstractSyntaxTreeNode, EvaluatableNode, EvaluationContext,
-                                     Field, GroupedBy, _EmptyNode)
+                                     AbstractSyntaxTreeNode, DatasetTableContext, EvaluatableNode,
+                                     EvaluationContext, Field, GroupedBy, _EmptyNode)
 from bq_types import BQScalarType, BQType, PythonType, TypedDataFrame, TypedSeries  # noqa: F401
 from dataframe_node import QueryExpression, Select, TableReference
 from evaluatable_node import LiteralType  # noqa: F401
@@ -33,7 +33,7 @@ class EvaluatableNodeTest(unittest.TestCase):
 
     def setUp(self):
         # type: () -> None
-        self.small_datasets = {
+        self.small_table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -42,9 +42,9 @@ class EvaluatableNodeTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
 
-        self.large_datasets = {
+        self.large_table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -53,12 +53,12 @@ class EvaluatableNodeTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
 
     def test_selector(self):
         # type: () -> None
         selector = Selector(Field(('a',)), 'field_alias')
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = selector.evaluate(context)
@@ -72,7 +72,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: () -> None
         selector = Selector(Field(('c',)), EMPTY_NODE)
         selector.position = 1
-        context = EvaluationContext(self.large_datasets)
+        context = EvaluationContext(self.large_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
 
@@ -109,7 +109,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: () -> None
         # A constant is repeated for each row in the context table.
         value = Value(12345, BQScalarType.INTEGER)
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')), 'foo')
         typed_series = value.evaluate(context)
         assert isinstance(typed_series, TypedSeries)
@@ -118,7 +118,7 @@ class EvaluatableNodeTest(unittest.TestCase):
     def test_field(self):
         # type: () -> None
         field = Field(('a',))
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = field.evaluate(context)
@@ -146,7 +146,7 @@ class EvaluatableNodeTest(unittest.TestCase):
     @unpack
     def test_functions(self, function_name, args, expected_result):
         # type: (str, List[EvaluatableNode], List[PythonType]) -> None
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         result = FunctionCall.create(function_name, args, EMPTY_NODE).evaluate(context)
@@ -157,7 +157,7 @@ class EvaluatableNodeTest(unittest.TestCase):
 
     def test_bad_function(self):
         # type: () -> None
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         with self.assertRaisesRegexp(NotImplementedError, 'NOT_A_FUNCTION not implemented'):
@@ -176,14 +176,15 @@ class EvaluatableNodeTest(unittest.TestCase):
     @unpack
     def test_aggregate_functions_in_group_by(self, selectors, expected_result):
         # type: (str, List[List[int]]) -> None
-        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
                 pd.DataFrame([[2, 1], [4, 1], [5, 2], [np.nan, 2]], columns=['a', 'b']),
-                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}}
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}})
 
         tokens = tokenize('select {} from my_table group by b'.format(selectors))
         node, leftover = select_rule(tokens)
         assert isinstance(node, Select)
-        result, unused_table_name = node.get_dataframe(datasets)
+        result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
@@ -215,12 +216,13 @@ class EvaluatableNodeTest(unittest.TestCase):
     )
     @unpack
     def test_analytic_function(self, selectors, expected_result):
-        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
                 pd.DataFrame([[20, 200], [10, 200], [30, 300], [30, 300]], columns=['a', 'b']),
-                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}}
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}})
         tokens = tokenize('select {} from my_table'.format(selectors))
         node, leftover = select_rule(tokens)
-        result, unused_table_name = node.get_dataframe(datasets)
+        result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)
         # Note: BQ docs say if ORDER BY clause (for the select as a whole) is not present, order of
         # results is undefined, so we do not assert on the order.
@@ -232,27 +234,29 @@ class EvaluatableNodeTest(unittest.TestCase):
     )
     @unpack
     def test_analytic_function_with_group_by(self, selectors, expected_result):
-        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
                 pd.DataFrame([[20, 2], [10, 2], [30, 3], [31, 3], [32, 3]], columns=['a', 'b']),
-                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}}
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER])}}})
         tokens = tokenize('select {} from my_table group by b'.format(selectors))
         node, leftover = select_rule(tokens)
-        result, unused_table_name = node.get_dataframe(datasets)
+        result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)
         # Note: BQ docs say if ORDER BY clause (for the select as a whole) is not present, order of
         # results is undefined, so we do not assert on the order.
         six.assertCountEqual(self, result.to_list_of_lists(), expected_result)
 
     def test_non_aggregate_function_in_group_by(self):
-        datasets = {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
                 pd.DataFrame([['one', '1'], ['two', '1'], ['three', '2'], ['four', '2']],
                              columns=['a', 'b']),
-                types=[BQScalarType.STRING, BQScalarType.INTEGER])}}}
+                types=[BQScalarType.STRING, BQScalarType.INTEGER])}}})
 
         tokens = tokenize('select max(concat(b, "hi")) from my_table group by b')
         node, leftover = select_rule(tokens)
         self.assertFalse(leftover)
-        result, unused_table_name = node.get_dataframe(datasets)
+        result, unused_table_name = node.get_dataframe(table_context)
         self.assertEqual(result.to_list_of_lists(), [['1hi'], ['2hi']])
 
     @data(
@@ -266,7 +270,7 @@ class EvaluatableNodeTest(unittest.TestCase):
     @unpack
     def test_count(self, count, expected_result):
         # type: (str, List[List[int]]) -> None
-        count_datasets = {
+        count_table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -275,18 +279,18 @@ class EvaluatableNodeTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         select, leftover = select_rule(tokenize('SELECT {} FROM my_table'.format(count)))
         self.assertFalse(leftover)
         assert isinstance(select, Select)
-        dataframe, unused_table_name = select.get_dataframe(count_datasets)
+        dataframe, unused_table_name = select.get_dataframe(count_table_context)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
     @data(('IS_NULL', [True, False]), ('IS_NOT_NULL', [False, True]))
     @unpack
     def test_null_check(self, direction, result):
         # type: (str, List[bool]) -> None
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -295,9 +299,9 @@ class EvaluatableNodeTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
 
-        context = EvaluationContext(datasets)
+        context = EvaluationContext(table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         expression = Field(('b',))
@@ -315,7 +319,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         elements = (Value(1, type_=BQScalarType.INTEGER), Value(3, type_=BQScalarType.INTEGER))
         in_check = InCheck(expression, direction, elements)
 
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = in_check.evaluate(context)
@@ -346,7 +350,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         # IF a > 1 THEN "yes" ELSE "no"
         if_expression = If(condition, then, else_)
 
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = if_expression.evaluate(context)
@@ -457,7 +461,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: (...) -> None
         case = Case(comparand, whens, else_)
 
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = case.evaluate(context)
@@ -498,7 +502,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         # type: (...) -> None
         case = Case(comparand, whens, else_)
 
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         with self.assertRaisesRegexp(ValueError, escape(error)):
@@ -646,7 +650,7 @@ class EvaluatableNodeTest(unittest.TestCase):
 
         exists = Exists(subquery_node)
 
-        context = EvaluationContext(self.small_datasets)
+        context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
         typed_series = exists.evaluate(context)
@@ -654,7 +658,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         self.assertEqual(list(typed_series.series), result)
 
     def test_exists_reference_outer(self):
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -667,7 +671,7 @@ class EvaluatableNodeTest(unittest.TestCase):
                     ),
                 }
             }
-        }
+        })
         select_query = "select a from `my_project.my_dataset.my_table` where " \
                        "my_table.a = my_table2.b"
         select_node, leftover = apply_rule(select_rule, tokenize(select_query))
@@ -675,7 +679,7 @@ class EvaluatableNodeTest(unittest.TestCase):
 
         exists = Exists(select_node)
 
-        context = EvaluationContext(datasets)
+        context = EvaluationContext(table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                     EMPTY_NODE)
         dataframe = exists.evaluate(context)
@@ -683,7 +687,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         self.assertEqual(list(dataframe.series), [True, False])
 
     def test_exists_index(self):
-        datasets = {
+        table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'bool_table': TypedDataFrame(
@@ -692,12 +696,12 @@ class EvaluatableNodeTest(unittest.TestCase):
                     )
                 }
             }
-        }
+        })
         select_query = 'select a = exists(select 1) from `my_project.my_dataset.bool_table`'
         select_node, leftover = apply_rule(select_rule, tokenize(select_query))
         self.assertFalse(leftover)
 
-        result, unused_table_name = select_node.get_dataframe(datasets)
+        result, unused_table_name = select_node.get_dataframe(table_context)
 
         self.assertEqual(result.to_list_of_lists(), [[True], [False]])
 

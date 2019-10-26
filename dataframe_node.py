@@ -13,7 +13,7 @@ import pandas as pd
 from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
                                      AbstractSyntaxTreeNode, DataframeNode, DatasetType,
                                      EvaluatableNode, EvaluationContext, Field,
-                                     MarkerSyntaxTreeNode, _EmptyNode)
+                                     MarkerSyntaxTreeNode, TableContext, _EmptyNode)
 from bq_types import BQType, TypedDataFrame, TypedSeries, implicitly_coerce  # noqa: F401
 from evaluatable_node import StarSelector  # noqa: F401
 from evaluatable_node import Selector, Value
@@ -26,6 +26,24 @@ _OrderByType = List[Tuple[Field, str]]
 _LimitType = Tuple[EvaluatableNode, EvaluatableNode]
 
 
+class _WithTableContext(TableContext):
+    '''A TableContext augmented by a WITH clause.'''
+
+    def __init__(self, name, table, parent_context):
+        # type: (str, TypedDataFrame, TableContext) -> None
+        self.name = name
+        self.table = table
+        self.parent_context = parent_context
+
+    def lookup(self, path):
+        # type: (Tuple[str, ...]) -> Tuple[TypedDataFrame, Optional[str]]
+        '''Look up a path to a table in this context.'''
+
+        if len(path) == 1 and path[0] == self.name:
+            return self.table, self.name
+        return self.parent_context.lookup(path)
+
+
 class QueryExpression(DataframeNode):
     '''Highest level definition of a query.
 
@@ -34,7 +52,7 @@ class QueryExpression(DataframeNode):
     '''
 
     def __init__(self,
-                 with_expression,  # type: Union[_EmptyNode, List[Tuple[str, DataframeNode]]]
+                 with_clauses,  # type: Union[_EmptyNode, List[Tuple[str, DataframeNode]]]
                  base_query,  # type: DataframeNode
                  order_by,  # type: Union[_EmptyNode, _OrderByType]
                  limit,  # type: Union[_EmptyNode, _LimitType]
@@ -43,30 +61,30 @@ class QueryExpression(DataframeNode):
         '''Set up QueryExpression node.
 
         Args:
-            with_expression: Optional WITH expression
+            with_clauses: Optional WITH expression
             base_query: Main part of query
             order_by: Expression by which to order results
             limit: Number of rows to return, possibly with an offset
         '''
 
-        self.with_expression = with_expression
+        self.with_clauses = with_clauses
         self.base_query = base_query
         self.order_by = order_by
         self.limit = limit
 
-    def _order_by(self, order_by, typed_dataframe, table_name, datasets):
-        # type: (_OrderByType, TypedDataFrame, Optional[str], DatasetType) -> TypedDataFrame
+    def _order_by(self, order_by, typed_dataframe, table_name, table_context):
+        # type: (_OrderByType, TypedDataFrame, Optional[str], TableContext) -> TypedDataFrame
         '''If ORDER BY is specified, sort the data by the given column(s)
         in the given direction(s).
 
         Args:
             typed_dataframe: The currently resolved query as a TypedDataFrame
             table_name: Resolved name of current typed_dataframe
-            datasets: A representation of the state of available tables
+            table_context: A representation of the state of available tables
         Returns:
             A new TypedDataFrame that is ordered by the given criteria
         '''
-        context = EvaluationContext(datasets)
+        context = EvaluationContext(table_context)
         context.add_table_from_dataframe(typed_dataframe, table_name, EMPTY_NODE)
 
         # order_by is a list of (field, direction) tuples to sort by
@@ -123,16 +141,24 @@ class QueryExpression(DataframeNode):
             typed_dataframe.dataframe[offset:limit + offset],
             typed_dataframe.types)
 
-    def get_dataframe(self, datasets, outer_context=None):
-        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
-        if self.with_expression is not EMPTY_NODE:
-            raise NotImplementedError("WITH expressions are not implemented yet.")
+        if not isinstance(self.with_clauses, _EmptyNode):
+            name_list = [name for name, _ in self.with_clauses]
+            if len(name_list) > len(set(name_list)):
+                raise ValueError("Duplicate names in WITH clauses are not allowed: {}"
+                                 .format(name_list))
+            for name, dataframe_node in self.with_clauses:
+                table_context = _WithTableContext(name,
+                                                  dataframe_node.get_dataframe(table_context)[0],
+                                                  table_context)
 
-        typed_dataframe, table_name = self.base_query.get_dataframe(datasets, outer_context)
+        typed_dataframe, table_name = self.base_query.get_dataframe(table_context, outer_context)
 
         if not isinstance(self.order_by, _EmptyNode):
-            typed_dataframe = self._order_by(self.order_by, typed_dataframe, table_name, datasets)
+            typed_dataframe = self._order_by(
+                self.order_by, typed_dataframe, table_name, table_context)
 
         if not isinstance(self.limit, _EmptyNode):
             typed_dataframe = self._limit(self.limit, typed_dataframe)
@@ -149,11 +175,13 @@ class SetOperation(DataframeNode):
         self.set_operator = set_operator
         self.right_query = right_query
 
-    def get_dataframe(self, datasets, outer_context=None):
-        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
-        left_dataframe, unused_left_name = self.left_query.get_dataframe(datasets, outer_context)
-        right_dataframe, unused_right_name = self.right_query.get_dataframe(datasets, outer_context)
+        left_dataframe, unused_left_name = self.left_query.get_dataframe(
+            table_context, outer_context)
+        right_dataframe, unused_right_name = self.right_query.get_dataframe(
+            table_context, outer_context)
         num_left_columns = len(left_dataframe.types)
         num_right_columns = len(right_dataframe.types)
         if num_left_columns != num_right_columns:
@@ -250,13 +278,13 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
                     self.group_by.append(grouper)
         self.having = having
 
-    def get_dataframe(self, datasets, outer_context=None):
-        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''Scope the given datasets by the criteria specified in the
         instance's fields.
 
         Args:
-            datasets: All the tables in the database
+            table_context: All the tables in the database
             outer_context: The context of the outer query, if this Select is a subquery;
                 otherwise None
         Returns:
@@ -265,9 +293,9 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         '''
 
         if isinstance(self.from_, _EmptyNode):
-            context = EvaluationContext(datasets)
+            context = EvaluationContext(table_context)
         else:
-            context = self.from_.create_context(datasets)
+            context = self.from_.create_context(table_context)
 
         if outer_context:
             context.add_subcontext(outer_context)
@@ -292,7 +320,7 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         result = _evaluate_fields_as_dataframe(fields_for_evaluation, context)
 
         if not isinstance(self.having, _EmptyNode):
-            having_context = EvaluationContext(datasets)
+            having_context = EvaluationContext(table_context)
             having_context.add_table_from_dataframe(result, None, EMPTY_NODE)
             having_context.add_subcontext(context)
             having_context.group_by_paths = context.group_by_paths
@@ -323,28 +351,8 @@ class TableReference(DataframeNode):
             path = tuple(split_path)
         self.path = path  # type: Tuple[str, ...]
 
-    def get_dataframe(self, datasets, outer_context=None):
-        # type: (DatasetType, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
         '''See parent, DataframeNode'''
         del outer_context  # Unused
-        if len(self.path) < 3:
-            # Table not fully qualified - attempt to resolve
-            if len(datasets) != 1:
-                raise ValueError("Non-fully-qualified table {} with multiple possible projects {}"
-                                 .format(self.path, sorted(datasets.keys())))
-            project, = datasets.keys()
-
-            if len(self.path) == 1:
-                # No dataset specified, only table
-                if len(datasets[project]) != 1:
-                    raise ValueError(
-                            "Non-fully-qualified table {} with multiple possible datasets {}"
-                            .format(self.path, sorted(datasets[project].keys())))
-                dataset, = datasets[project].keys()
-                self.path = (project, dataset) + self.path
-            else:
-                # Dataset and table both specified
-                self.path = (project,) + self.path
-
-        project_id, dataset_id, table_id = self.path
-        return datasets[project_id][dataset_id][table_id], table_id
+        return table_context.lookup(self.path)

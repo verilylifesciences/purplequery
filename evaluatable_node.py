@@ -17,7 +17,7 @@ from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa
                                      DataframeNode, EvaluatableLeafNode, EvaluatableNode,
                                      EvaluatableNodeThatAggregatesOrGroups,
                                      EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
-                                     MarkerSyntaxTreeNode, _EmptyNode)
+                                     MarkerSyntaxTreeNode, TableContext, _EmptyNode)
 from bq_types import (BQScalarType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
                       implicitly_coerce)
 from six.moves import reduce
@@ -161,7 +161,7 @@ class Exists(MarkerSyntaxTreeNode, EvaluatableLeafNode):
             single_row_df = TypedDataFrame(
                 pd.DataFrame([row], index=context.table.dataframe.index), context.table.types)
             row_context = EvaluationContext.clone_context_new_table(single_row_df, context)
-            typed_df, df_name = self.subquery.get_dataframe(context.datasets, row_context)
+            typed_df, df_name = self.subquery.get_dataframe(context.table_context, row_context)
             results.append(len(typed_df.dataframe) > 0)
         # Construct a Series that contains each of the individual result rows
         return TypedSeries(pd.Series(results, index=_get_index(context.table.dataframe)),
@@ -885,7 +885,7 @@ class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
         # select/order by/group by, except it results in a single column.
         #
         # Start with a completely empty evaluation context.
-        context = EvaluationContext({})
+        context = EvaluationContext(TableContext())
         context.table = TypedDataFrame(pd.DataFrame(), [])
 
         # Add into the context the expressions referenced as function arguments, ORDER BY and

@@ -10,7 +10,8 @@ import pandas as pd
 from ddt import data, ddt, unpack
 
 from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     EvaluationContext, _EmptyNode)
+                                     DatasetTableContext, EvaluationContext, TableContext,
+                                     _EmptyNode)
 from bq_types import BQScalarType, TypedDataFrame
 from dataframe_node import TableReference
 
@@ -20,7 +21,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def setUp(self):
         # type: () -> None
-        self.datasets = {
+        self.table_context = DatasetTableContext({
             'my_project': {
                 'my_dataset': {
                     'my_table': TypedDataFrame(
@@ -41,7 +42,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
                     ),
                 }
             }
-        }
+        })
 
     def test_ast_repr(self):
         # type: () -> None
@@ -69,7 +70,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def test_evaluation_context(self):
         # type: () -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
 
@@ -87,7 +88,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
     @unpack
     def test_evaluation_context_path(self, path):
         # type: (Tuple[str, ...]) -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                EMPTY_NODE)
 
@@ -101,7 +102,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
     @unpack
     def test_evaluation_context_path_error(self, path, error):
         # type: (Tuple[str, ...], str) -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
@@ -112,7 +113,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def test_context_lookup_success(self):
         # type: () -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
@@ -131,12 +132,12 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
     @unpack
     def test_subcontext_lookup_success(self, path, expected_result):
         # type: (Tuple[str, ...], List[int]) -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                EMPTY_NODE)
-        subcontext = EvaluationContext(self.datasets)
+        subcontext = EvaluationContext(self.table_context)
         subcontext.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table3')),
                                        EMPTY_NODE)
         ec.add_subcontext(subcontext)
@@ -147,16 +148,16 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def test_subcontext_lookup_error_already_has_subcontext(self):
         # type: () -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                EMPTY_NODE)
-        subcontext1 = EvaluationContext(self.datasets)
+        subcontext1 = EvaluationContext(self.table_context)
         subcontext1.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table3')),
                                         EMPTY_NODE)
         ec.add_subcontext(subcontext1)
-        subcontext2 = EvaluationContext(self.datasets)
+        subcontext2 = EvaluationContext(self.table_context)
         subcontext2.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table4')),
                                         EMPTY_NODE)
         with self.assertRaisesRegexp(ValueError, 'Context already has subcontext'):
@@ -164,7 +165,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def test_context_lookup_key_error(self):
         # type: () -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                EMPTY_NODE)
 
@@ -179,7 +180,7 @@ class BQAbstractSyntaxTreeTest(unittest.TestCase):
 
     def test_context_lookup_type_error(self):
         # type: () -> None
-        ec = EvaluationContext(self.datasets)
+        ec = EvaluationContext(self.table_context)
         ec.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table2')),
                                EMPTY_NODE)
 

@@ -7,7 +7,7 @@
 
 import re
 
-from bq_abstract_syntax_tree import DatasetType  # noqa: F401
+from bq_abstract_syntax_tree import DatasetTableContext, DatasetType  # noqa: F401
 from bq_types import TypedDataFrame  # noqa: F401
 from dataframe_node import QueryExpression
 from grammar import query_expression
@@ -52,7 +52,7 @@ def execute_query(query, datasets):
         if not isinstance(tree, QueryExpression):
             raise RuntimeError('Parsing expression did not return appropriate data type: {!r}'
                                .format(tree))
-        typed_dataframe, _ = tree.get_dataframe(datasets)
+        typed_dataframe, _ = tree.get_dataframe(DatasetTableContext(datasets))
     except Exception as e:
         first = e.args[0] if len(e.args) > 0 else ''
         rest = e.args[1:] if len(e.args) > 1 else tuple()
