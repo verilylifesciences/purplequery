@@ -43,7 +43,7 @@ class BqTypesTest(unittest.TestCase):
         schema_array_field = SchemaField(
                 name=schema_field.name,
                 field_type=schema_field.field_type,
-                mode='ARRAY')
+                mode='REPEATED')
         bq_array_type = BQArray(bq_type)
         self.assertEqual(BQType.from_schema_field(schema_array_field), bq_array_type)
         self.assertEqual(bq_array_type.to_schema_field('foo'), schema_array_field)
@@ -106,8 +106,8 @@ class BqTypesTest(unittest.TestCase):
 
         # Now test the same conversion for a list (array) of objects.
         # Construct a Series containing a single row which is a list of three objects.
-        pd_array_object, = pd.Series([[pd_object]*3])
-        self.assertEqual(BQArray(bq_type).convert(pd_array_object), [py_object]*3)
+        pd_array_object, = pd.Series([(pd_object,)*3])
+        self.assertEqual(BQArray(bq_type).convert(pd_array_object), (py_object,)*3)
 
         # Test that for any Array type, a NaN converts to None
         self.assertIsNone(BQArray(bq_type).convert(np.nan))
@@ -131,12 +131,12 @@ class BqTypesTest(unittest.TestCase):
 
     def test_get_typed_series_as_list(self):
         typed_series = TypedSeries(
-                pd.Series([[np.float64(1.5), np.float64(2.5), np.float64(3.0)],
-                           [np.float64(2.5), np.float64(3.5), np.float64(4.0)]]),
+                pd.Series([(np.float64(1.5), np.float64(2.5), np.float64(3.0)),
+                           (np.float64(2.5), np.float64(3.5), np.float64(4.0))]),
                 BQArray(BQScalarType.FLOAT))
         self.assertEqual(typed_series.to_list(),
-                         [[1.5, 2.5, 3.0],
-                          [2.5, 3.5, 4.0]])
+                         [(1.5, 2.5, 3.0),
+                          (2.5, 3.5, 4.0)])
 
     def test_get_typed_dataframe_schema(self):
         typed_dataframe = TypedDataFrame(pd.DataFrame(columns=['a', 'b']),
@@ -144,19 +144,19 @@ class BqTypesTest(unittest.TestCase):
                                           BQArray(BQScalarType.FLOAT)])
         self.assertEqual(typed_dataframe.to_bq_schema(),
                          [SchemaField(name='a', field_type='BOOLEAN'),
-                          SchemaField(name='b', field_type='FLOAT', mode='ARRAY')])
+                          SchemaField(name='b', field_type='FLOAT', mode='REPEATED')])
 
     def test_get_typed_dataframe_as_list_of_lists(self):
         typed_dataframe = TypedDataFrame(
                 pd.DataFrame(
-                        [[np.bool_(True), [np.float64(1.5), np.float64(2.5), np.float64(3.0)]],
-                         [np.bool_(False), [np.float64(2.5), np.float64(3.5), np.float64(4.0)]]],
+                        [[np.bool_(True), (np.float64(1.5), np.float64(2.5), np.float64(3.0))],
+                         [np.bool_(False), (np.float64(2.5), np.float64(3.5), np.float64(4.0))]],
                         columns=['a', 'b']),
                 [BQScalarType.BOOLEAN,
                  BQArray(BQScalarType.FLOAT)])
         self.assertEqual(typed_dataframe.to_list_of_lists(),
-                         [[True, [1.5, 2.5, 3.0]],
-                          [False, [2.5, 3.5, 4.0]]])
+                         [[True, (1.5, 2.5, 3.0)],
+                          [False, (2.5, 3.5, 4.0)]])
 
     @data(
         ([BQScalarType.INTEGER], BQScalarType.INTEGER),

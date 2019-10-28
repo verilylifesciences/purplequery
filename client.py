@@ -433,7 +433,7 @@ def _make_array_reader(bq_type):
         """Reads a single csv cell and returns a list of values or NaN."""
         if s == 'NULL':
             return np.nan
-        return [numpy_type(element) for element in s.split(',')]
+        return tuple(numpy_type(element) for element in s.split(','))
 
     return read_array_from_csv
 

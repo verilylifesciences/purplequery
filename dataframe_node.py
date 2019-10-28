@@ -212,13 +212,6 @@ def _evaluate_fields_as_dataframe(fields, context):
     # single columns
     evaluated_fields = [field.evaluate(context) for field in fields]
 
-    # Make sure there are no ungrouped fields; an example would be SELECT a GROUP BY b
-    for field, evaluated_field in zip(fields, evaluated_fields):
-        if (isinstance(evaluated_field, TypedSeries) and
-                isinstance(evaluated_field.series, pd.core.groupby.SeriesGroupBy)):
-            raise ValueError("selecting expression {} that is not aggregated or grouped by"
-                             .format(field))
-
     # Creates one large table out of each of the evaluated field
     # tables/columns
     types = reduce(operator.add,

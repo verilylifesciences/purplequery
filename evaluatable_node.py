@@ -18,12 +18,59 @@ from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa
                                      EvaluatableNodeThatAggregatesOrGroups,
                                      EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
-from bq_types import (BQScalarType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
+from bq_types import (BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
                       implicitly_coerce)
 from six.moves import reduce
 
 NoneType = type(None)
-LiteralType = Union[NoneType, bool, int, float, str]
+LiteralType = Union[NoneType, bool, int, float, str, Tuple]
+
+
+class Array(EvaluatableNodeWithChildren):
+    '''An ARRAY expression, grouping several columns into a column of ARRAYs.'''
+
+    def __init__(self, maybe_type, maybe_values):
+        # type: (Union[str, _EmptyNode], Union[Sequence[EvaluatableNode], _EmptyNode]) -> None
+        '''Creates an array from a literal in the grammar.
+
+        Args:
+            maybe_type: If the node is present, this is a string giving the type of the array.
+            maybe_values: If the node is present, this is a sequence of expressions giving the
+                contents of the array.
+        '''
+        self.type_ = (BQScalarType.from_string(maybe_type) if not isinstance(maybe_type, _EmptyNode)
+                      else None)
+        if isinstance(maybe_values, _EmptyNode):
+            # If this is an empty array, we need a placeholder child so that at
+            # evaluation time, we know how many rows of empty arrays to produce.
+            self.children = [Value(1, BQScalarType.INTEGER)]
+            self.empty = True
+        else:
+            self.children = maybe_values
+            self.empty = False
+
+    def copy(self, new_children):
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
+        return Array(EMPTY_NODE if self.type_ is None else self.type_.value,
+                     EMPTY_NODE if self.empty else new_children)
+
+    def _evaluate_node(self, values):
+        # type: (List[TypedSeries]) -> TypedSeries
+        value_type = implicitly_coerce(*[value.type_ for value in values])
+        if self.type_:
+            type_ = implicitly_coerce(value_type, self.type_)
+        else:
+            type_ = value_type
+        if self.empty:
+            # If this is an empty array, we have a placeholder child so that
+            # we know how many rows of empty arrays to produce.
+            arrays = [()] * len(values[0].series)
+        else:
+            arrays = list(zip(*[value.series for value in values]))
+        if not isinstance(type_, BQScalarType):
+            raise ValueError("Cannot create arrays of type {}".format(type_))
+            # TODO allow ARRAYs of STRUCTs
+        return TypedSeries(pd.Series(arrays, index=values[0].series.index), BQArray(type_))
 
 
 class Case(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
@@ -553,9 +600,22 @@ class _Function(object):
         # type: () -> str
         return cls.__name__.upper()
 
-    # result_type=None means that the result type will be the same as the argument types.  e.g.
+    # _result_type=None means that the result type will be the same as the argument types.  e.g.
     # summing a column of floats gives a float, summing a column of ints gives an int.
-    result_type = None  # type: Optional[BQType]
+    _result_type = None  # type: Optional[BQType]
+
+    def compute_result_type(self, argument_types):
+        # type: (Sequence[BQType]) -> BQType
+        '''Computes the type of the result of applying this function.
+
+        Args:
+            argument_types: The types of the evaluated arguments to this function.
+
+        Returns:
+            If specified, the result type for this function, otherwise returns a common
+            type for all the arguments.
+        '''
+        return self._result_type or implicitly_coerce(*argument_types)
 
 
 class _NonAggregatingFunction(_Function):
@@ -589,6 +649,87 @@ class _AggregatingFunction(_Function):
         '''
 
 
+class Array_agg(_AggregatingFunction):
+    '''An ARRAY_AGG function, aggregating a column of results into an ARRAY-valued cell.'''
+
+    @classmethod
+    def create_function_call(
+                 cls,
+                 distinct,  # type: Union[_EmptyNode, str]
+                 expression,  # type: EvaluatableNode
+                 nulls,  # type: AbstractSyntaxTreeNode
+                 order_by,  # type: AbstractSyntaxTreeNode
+                 limit,  # type: AbstractSyntaxTreeNode
+                 over_clause,  # type: _OverClauseType
+                 ):
+        # type: (...) -> EvaluatableNode
+        '''Creates an ARRAY_AGG function call based on the inputs from the grammar.
+
+        Args:
+            distinct: 'DISTINCT' if the function should return only distinct rows,
+                empty otherwise.
+            expression: The column to aggregate
+            nulls: 'IGNORE' if NULLs should not be returned; 'RESPECT' or empty otherwise.
+            order_by: A syntax subtree describing how to order the rows.  Not implemented.
+            limit: A syntax subtree giving how many rows to return at most.  Not implemented.
+            over_clause: The window to evaluate the function over as an analytic function.
+        '''
+        function = Array_agg(distinct, nulls, order_by, limit)
+        if isinstance(over_clause, _EmptyNode):
+            return _AggregatingFunctionCall(function, [expression])
+        else:
+            return _AnalyticFunctionCall(function, [expression], over_clause)
+
+    def __init__(self,
+                 distinct,  # type: Union[_EmptyNode, str]
+                 nulls,  # type: AbstractSyntaxTreeNode
+                 order_by,  # type: AbstractSyntaxTreeNode
+                 limit,  # type: AbstractSyntaxTreeNode
+                 ):
+        # type: (...) -> None
+        if distinct == 'DISTINCT':
+            self.distinct = True
+        elif distinct is EMPTY_NODE:
+            self.distinct = False
+        else:
+            raise ValueError("Invalid syntax: ARRAY_AGG({}...)".format(distinct))
+
+        if nulls == 'IGNORE':
+            self.drop_nulls = True
+        elif nulls in ('RESPECT', EMPTY_NODE):
+            self.drop_nulls = False
+        else:
+            raise ValueError("Invalid Syntax: ARRAY_AGG(...{}...)".format(nulls))
+
+        self.order_by = order_by
+        self.limit = limit
+
+    def compute_result_type(self, argument_types):
+        # type: (Sequence[BQType]) -> BQType
+        computed_argument_type = implicitly_coerce(*argument_types)
+        if not isinstance(computed_argument_type, BQScalarType):
+            raise ValueError("ARRAYs are only supported of scalar types")
+            # TODO: support ARRAYs of structs.
+        return BQArray(computed_argument_type)
+
+    def aggregating_function(self, values):
+        # type: (List[pd.Series]) -> Tuple
+        if len(values) != 1:
+            raise ValueError("ARRAY_AGG takes exactly one argument, not {}"
+                             .format(len(values)))
+        result = values[0]
+        if self.distinct:
+            result = result.drop_duplicates()
+        if self.drop_nulls:
+            result = result.dropna()
+        if self.order_by is not EMPTY_NODE:
+            raise NotImplementedError("ARRAY_AGG(ORDER BY) is not implemented")
+        if self.limit is not EMPTY_NODE:
+            raise NotImplementedError("ARRAY_AGG(LIMIT) is not implemented")
+
+        return tuple(result)
+
+
 _CounteeType = Union[str,                           # a literal * i.e. COUNT(*)
                      Tuple[Union[str, _EmptyNode],  # optional modifier, e.g. DISTINCT
                            EvaluatableNode]]        # the thing counted.
@@ -599,7 +740,7 @@ class Count(_AggregatingFunction):
     SELECT COUNT(*) FROM Table
     '''
 
-    result_type = BQScalarType.INTEGER
+    _result_type = BQScalarType.INTEGER
 
     @classmethod
     def create_count_function_call(cls,
@@ -693,7 +834,7 @@ class Min(_AggregatingFunction):
 class Concat(_NonAggregatingFunction):
     '''The concatenation of a series of strings.'''
 
-    result_type = BQScalarType.STRING
+    _result_type = BQScalarType.STRING
 
     def function(self, values):
         # type: (List[pd.Series]) -> pd.Series
@@ -703,7 +844,7 @@ class Concat(_NonAggregatingFunction):
 class Timestamp(_NonAggregatingFunction):
     '''The conversion of a column of values to timestamps.'''
 
-    result_type = BQScalarType.TIMESTAMP
+    _result_type = BQScalarType.TIMESTAMP
 
     def function(self, values):
         # type: (List[pd.Series]) -> pd.Series
@@ -713,7 +854,7 @@ class Timestamp(_NonAggregatingFunction):
 class Row_Number(_NonAggregatingFunction):
     '''A numbering of the rows in a column.'''
 
-    result_type = BQScalarType.INTEGER
+    _result_type = BQScalarType.INTEGER
 
     def function(self, values):
         # type: (List[pd.Series]) -> pd.Series
@@ -757,23 +898,21 @@ class FunctionCall(object):
         else:
             raise ValueError("Invalid function info {}".format(function_info))
 
-    def _evaluate(self, arguments, function, result_type):
-        # type: (List[TypedSeries], _FunctionType, BQType) -> TypedSeries
+    def _evaluate(self, arguments, function, compute_result_type):
+        # type: (List[TypedSeries], _FunctionType, Callable[[List[BQType]], BQType]) -> TypedSeries
         '''Evaluates arguments using function.
 
         Args:
             arguments: A list of TypedSeries (columns of data)
             function: A function to apply to the arguments.
-            result_type: Type of the result of this function call.  None means depends on the
-                arguments.
+            compute_result_type: A function to call to compute the result type based on the types
+                of the arguments.
         Returns:
             The result of applying the function to the arguments.
         '''
         argument_values = [argument.series for argument in arguments]
         argument_types = [argument.type_ for argument in arguments]
-        if result_type is None:
-            result_type = implicitly_coerce(*argument_types)
-        return TypedSeries(function(argument_values), result_type)
+        return TypedSeries(function(argument_values), compute_result_type(argument_types))
 
 
 class _NonAggregatingFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
@@ -794,7 +933,7 @@ class _NonAggregatingFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
     def _evaluate_node(self, arguments):
         # type: (List[TypedSeries]) -> TypedSeries
         return self._evaluate(
-                arguments, self.function_info.function, self.function_info.result_type)
+                arguments, self.function_info.function, self.function_info.compute_result_type)
 
 
 class _AggregatingFunctionCall(FunctionCall, EvaluatableNodeThatAggregatesOrGroups):
@@ -816,15 +955,15 @@ class _AggregatingFunctionCall(FunctionCall, EvaluatableNodeThatAggregatesOrGrou
         # type: (List[TypedSeries]) -> TypedSeries
         return self._evaluate(
             arguments,
-            lambda values: pd.Series(self.function_info.aggregating_function(values)),
-            self.function_info.result_type)
+            lambda values: pd.Series([self.function_info.aggregating_function(values)]),
+            self.function_info.compute_result_type)
 
     def _evaluate_node_in_group_by(self, arguments):
         # type: (List[TypedSeries]) -> TypedSeries
         return self._evaluate(
             arguments,
             lambda values: values[0].apply(lambda x: self.function_info.aggregating_function([x])),
-            self.function_info.result_type)
+            self.function_info.compute_result_type)
 
 
 class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
@@ -920,9 +1059,8 @@ class _AnalyticFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
         evaluated_arguments = [context.lookup(path) for path in argument_paths]
 
         # Calculate the result type (just as is done for the other FunctionCall types)
-        result_type = self.function_info.result_type
-        if result_type is None:
-            result_type = implicitly_coerce(*[argument.type_ for argument in evaluated_arguments])
+        result_type = self.function_info.compute_result_type(
+            [argument.type_ for argument in evaluated_arguments])
 
         # Determine which function to call
         if isinstance(self.function_info, _AggregatingFunction):

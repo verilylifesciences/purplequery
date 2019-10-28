@@ -167,11 +167,16 @@ class EvaluatableNodeTest(unittest.TestCase):
         # Explore each aggregate function, along with a non-aggregate function to make sure we
         # can compute both at once.
         dict(selectors='sum(a), b+10', expected_result=[[6, 11], [5, 12]]),
+        dict(selectors='sum(a), 20+10', expected_result=[[6, 30], [5, 30]]),
         dict(selectors='sum(a+1), b+10', expected_result=[[8, 11], [6, 12]]),
         dict(selectors='max(a), b+10', expected_result=[[4, 11], [5, 12]]),
         dict(selectors='min(a), b+10', expected_result=[[2, 11], [5, 12]]),
         dict(selectors='count(a), b+10', expected_result=[[2, 11], [1, 12]]),
         dict(selectors='count(*), b+10', expected_result=[[2, 11], [2, 12]]),
+        dict(selectors='array_agg(a), []', expected_result=[[(2, 4), ()], [(5, None), ()]]),
+        dict(selectors='array_agg(a), [b]', expected_result=[[(2, 4), (1,)], [(5, None), (2,)]]),
+        dict(selectors='array_agg(a), [7, 8]', expected_result=[[(2, 4), (7, 8)],
+                                                                [(5, None), (7, 8)]]),
     )
     @unpack
     def test_aggregate_functions_in_group_by(self, selectors, expected_result):
@@ -187,6 +192,53 @@ class EvaluatableNodeTest(unittest.TestCase):
         result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)
         self.assertEqual(result.to_list_of_lists(), expected_result)
+
+    @data(
+        dict(query='SELECT ARRAY_AGG(a)',
+             expected_result=(1, 1, 2, None)),
+        dict(query='SELECT ARRAY_AGG(a RESPECT NULLS)',
+             expected_result=(1, 1, 2, None)),
+        dict(query='SELECT ARRAY_AGG(DISTINCT a)',
+             expected_result=(1, 2, None)),
+        dict(query='SELECT ARRAY_AGG(DISTINCT a RESPECT NULLS)',
+             expected_result=(1, 2, None)),
+        dict(query='SELECT ARRAY_AGG(a IGNORE NULLS)',
+             expected_result=(1, 1, 2)),
+        dict(query='SELECT ARRAY_AGG(DISTINCT a IGNORE NULLS)',
+             expected_result=(1, 2)),
+    )
+    @unpack
+    def test_array_agg_arguments(self, query, expected_result):
+        # type: (str, Tuple[Optional[int], ...]) -> None
+        table_context = DatasetTableContext(
+            {'p': {'d': {'t':
+                         TypedDataFrame(pd.DataFrame([[1], [1], [2], [None]], columns=['a']),
+                                        types=[BQScalarType.INTEGER])}}})
+
+        node, leftover = select_rule(tokenize(query + ' FROM p.d.t'))
+        self.assertFalse(leftover)
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(table_context)
+        self.assertEqual(result.to_list_of_lists(), [[expected_result]])
+
+    @data(
+        dict(query='SELECT [1,2,"a"]',
+             error='Cannot implicitly coerce the given types'),
+        dict(query='SELECT ARRAY<INT64>[1,2,"a"]',
+             error='Cannot implicitly coerce the given types'),
+        dict(query='SELECT ARRAY<STRING>[1,2]',
+             error='Cannot implicitly coerce the given types'),
+        dict(query='SELECT [[1]]',
+             error=r'Cannot create arrays of type BQArray\(INTEGER\)'),
+    )
+    @unpack
+    def test_array_errors(self, query, error):
+        # type: (str, str) -> None
+        node, leftover = select_rule(tokenize(query))
+        self.assertFalse(leftover)
+        assert isinstance(node, Select)
+        with self.assertRaisesRegexp(ValueError, error):
+            node.get_dataframe(self.small_table_context)
 
     @data(
         # Row number over whole dataset; order is not guaranteed
