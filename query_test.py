@@ -5,13 +5,14 @@
 
 import datetime
 import unittest
+from typing import Any  # noqa: F401
 
 import pandas as pd
 from ddt import data, ddt, unpack
 
 import query
-from bq_abstract_syntax_tree import EMPTY_CONTEXT
-from bq_types import BQScalarType, TypedDataFrame
+from bq_abstract_syntax_tree import EMPTY_CONTEXT, EvaluatableNode
+from bq_types import BQScalarType, TypedDataFrame, TypedSeries
 from grammar import expression as expression_rule
 
 
@@ -119,15 +120,21 @@ class QueryTest(unittest.TestCase):
         ('CASE WHEN FALSE THEN 0 WHEN TRUE THEN 1 ELSE 2 END', 1),
         ('CAST(123 AS STRING)', '123'),
         ('CAST(2+2 AS STRING)', '4'),
+        ('ARRAY<INT64>[1,2,3]', (1, 2, 3)),
+        ('[1,2,3]', (1, 2, 3)),
+        ('ARRAY<INT64>[]', ()),
     )
     @unpack
     def test_scalar_expressions(self, expression, expected_result):
+        # type: (str, Any) -> None
         tokens = query.tokenize(expression)
 
         ast, leftover = query.apply_rule(expression_rule, tokens)
         self.assertFalse(leftover, 'leftover {}'.format(leftover))
 
+        assert isinstance(ast, EvaluatableNode)
         typed_series = ast.evaluate(EMPTY_CONTEXT)
+        assert isinstance(typed_series, TypedSeries)
         self.assertEqual(typed_series.to_list(), [expected_result])
 
     @data(*(
@@ -207,6 +214,13 @@ class QueryTest(unittest.TestCase):
         ('select case a when 1 then "one" when 2 then "two" else "three" end from '
          '`my_project.my_dataset.table1`',
          [['one'], ['two'], ['three']]),
+
+        ('select ARRAY<INT64>[], i from ten_rows limit 3',
+         [[(), 0], [(), 1], [(), 2]]),
+
+        ('select a, array_agg(d) as ds from table2 group by a',
+         [[1, (6, )],
+          [2, (7, 8)]]),
 
         ('select exists (select i from `my_project.my_dataset.ten_rows`)',
          [[True]]),

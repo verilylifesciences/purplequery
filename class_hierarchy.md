@@ -47,6 +47,8 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
    \
     EvaluatableNodeWithChildren            # Abstract
     |\
+    | Array                                # An array literal; ARRAY<type>[expr, ...]
+    |\
     | BinaryExpression                     # A binary expression, 3 + 4, a < b, etc.
     |\
     | Case                                 # CASE ... WHEN ... ELSE
@@ -98,6 +100,8 @@ and the type of function.
 Function                  # Abstract base class of all functions
 |\
 | AggregatingFunction     # Function that aggregates many values into one value
+| |\
+| | Array_agg             # Aggregate a column into an array-valued cell
 | |\
 | | Count                 # Count of nonempty values.
 | |\

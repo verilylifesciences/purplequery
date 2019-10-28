@@ -145,6 +145,11 @@ class EvaluatableNode(AbstractSyntaxTreeNode):
             context: Context to evaluate in (for canonicalizing)
         '''
 
+    def is_constant(self):
+        # type: () -> bool
+        '''Returns true if this expression is the same when evaluated in any context.'''
+        return True
+
 
 class EvaluatableLeafNode(EvaluatableNode):
     '''Abstract Syntax Tree Node that can be evaluated and has no child nodes.'''
@@ -284,6 +289,11 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
         return self.copy([child.mark_grouped_by(group_by_paths, context)
                           for child in self.children])
 
+    def is_constant(self):
+        # type: () -> bool
+        '''Returns true if this expression is the same when evaluated in any context.'''
+        return all(child.is_constant() for child in self.children)
+
 
 class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
     '''Abstract Syntax Tree node that can be evaluated that aggregates child nodes.
@@ -291,7 +301,7 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
     Subclasses represent expressions like count, max, or sum that aggregate results of multiple
     rows into one row.
 
-    GroupBy is also a subclass; this expression node wraps Fields that are listed in GROUP BY and
+    GroupedBy is also a subclass; this expression node wraps Fields that are listed in GROUP BY and
     are not themselves aggregated.
     '''
 
@@ -345,6 +355,11 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
         # If columns that are grouped by appear inside of an aggregating expression, they will
         # be aggregated by that expression, so we should not mark them as grouped by.
         return self
+
+    def is_constant(self):
+        # type: () -> bool
+        '''Any expression that aggregates may not be constant once grouping is applied.'''
+        return False
 
 
 class TableContext(object):
@@ -514,6 +529,10 @@ class Field(EvaluatableLeafNode):
             return self.path == other.path
         return False
 
+    def is_constant(self):
+        # type: () -> bool
+        return False
+
 
 class _EmptyNode(AbstractSyntaxTreeNode):
     '''An Empty syntax tree node; represents an optional element not present.'''
@@ -628,6 +647,22 @@ class EvaluationContext:
                 self.table.types + [column.type_])
         return canonical_path
 
+    def _partially_evaluate(self, selector, group_by_paths):
+        # type: (EvaluatableNode, Sequence[Tuple[str, ...]]) -> EvaluatableNode
+        """Partially evaluates a selector in preparation for group by."""
+
+        if selector.is_constant():
+            marked_selector = GroupedBy(selector)  # type: EvaluatableNode
+        else:
+            marked_selector = selector.mark_grouped_by(group_by_paths, self)
+
+        partially_evaluated_selector = marked_selector.pre_group_by_partially_evaluate(self)
+        # If we evaluate a selector and it's fully evaluated...
+        if isinstance(partially_evaluated_selector, TypedSeries):
+            raise ValueError("selecting expression {} that is not aggregated or grouped by"
+                             .format(selector))
+        return partially_evaluated_selector
+
     def do_group_by(self, selectors, group_by):
         # type: (Sequence[EvaluatableNode], List[Field]) -> List[EvaluatableNode]
         """Groups the current context by the requested paths.
@@ -644,11 +679,8 @@ class EvaluationContext:
         if isinstance(self.table.dataframe, pd.core.groupby.DataFrameGroupBy):
             raise ValueError("Context already grouped!")
         group_by_paths = [self.get_canonical_path(field.path) for field in group_by]
-        marked_selectors = [field.mark_grouped_by(group_by_paths, self) for field in selectors]
-        partially_evaluated_selectors = [
-            field.pre_group_by_partially_evaluate(self) for field in marked_selectors]
-        new_selectors = [Field(self.maybe_add_column(selector)) if isinstance(selector, TypedSeries)
-                         else selector for selector in partially_evaluated_selectors]
+        new_selectors = [self._partially_evaluate(selector, group_by_paths)
+                         for selector in selectors]
 
         group_by_fields = ['.'.join(path) for path in group_by_paths]
         grouped = self.table.dataframe.groupby(by=group_by_fields)

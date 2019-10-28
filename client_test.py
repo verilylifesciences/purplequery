@@ -26,7 +26,7 @@ _TEST_SCHEMA = [SchemaField(name="num", field_type='INTEGER'),
                 SchemaField(name="start_date", field_type='DATE'),
                 SchemaField(name="mid_date", field_type='DATETIME'),
                 SchemaField(name="end_time", field_type='TIMESTAMP'),
-                SchemaField(name="xs", field_type='INTEGER', mode='ARRAY'),
+                SchemaField(name="xs", field_type='INTEGER', mode='REPEATED'),
                 ]
 
 
@@ -186,7 +186,7 @@ class ClientTest(ClientTestBase):
     EXPECTED_ROW = (789, '756', 5.0, False, datetime.date(2010, 11, 12),
                     datetime.datetime(2018, 12, 11, 11, 11, 11, 222222),
                     datetime.datetime(2019, 1, 23, 0, 37, 46, 61780),
-                    [999, 23])  # type: Tuple[PythonType, ...]
+                    (999, 23))  # type: Tuple[PythonType, ...]
 
     # Set column_to_null to each column in turn, then None (no null columns)
     @data(*([[i] for i in range(len(INPUT_ROW))] + [[None]]))

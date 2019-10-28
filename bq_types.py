@@ -17,7 +17,8 @@ This module also provides two classes representing the basic data types used in 
 import datetime
 import enum
 from abc import ABCMeta, abstractmethod
-from typing import Any, AnyStr, Callable, Dict, List, Optional, Type, Union, cast  # noqa: F401
+from typing import (Any, AnyStr, Callable, Dict, List, Optional, Tuple, Type, Union,  # noqa: F401
+                    cast)
 
 import numpy as np
 import pandas as pd
@@ -29,7 +30,7 @@ from google.cloud.bigquery.schema import SchemaField
 NoneType = type(None)
 ScalarPythonType = Union[bool, datetime.date, datetime.datetime, int, float, str, NoneType,
                          six.text_type]
-PythonType = Union[ScalarPythonType, List[ScalarPythonType]]
+PythonType = Union[ScalarPythonType, Tuple[ScalarPythonType, ...]]
 
 # These types are possible values in a Pandas DataFrame or Series.
 # Compare to PythonType above: numeric and boolean types use NumPy types, time types use
@@ -275,12 +276,15 @@ _BQ_SCALAR_TYPE_TO_PYTHON_TYPE = {
 }  # type: Dict[BQScalarType, Callable[[PandasType], ScalarPythonType]]
 
 
+ArrayableType = Union[BQScalarType]  # TODO: Add STRUCT types
+
+
 class BQArray(BQType):
     """Representation of a BigQuery ARRAY type."""
-    _ARRAY_TYPE_OBJECTS = {}  # type: Dict[BQType, BQArray]
+    _ARRAY_TYPE_OBJECTS = {}  # type: Dict[ArrayableType, BQArray]
 
     def __new__(cls, type_):
-        # type: (BQScalarType) -> BQArray
+        # type: (ArrayableType) -> BQArray
         """Ensures that there is only one instance of BQArray per component type.
 
         Args:
@@ -296,7 +300,9 @@ class BQArray(BQType):
         return cls._ARRAY_TYPE_OBJECTS[type_]
 
     def __init__(self, type_):
-        # type: (BQScalarType) -> None
+        # type: (ArrayableType) -> None
+        if isinstance(type_, BQArray):
+            raise ValueError("Cannot create arrays of arrays!")
         self.type_ = type_
 
     def to_schema_field(self, name):
@@ -310,7 +316,10 @@ class BQArray(BQType):
         Returns:
             A SchemaField object corresponding to a column containing this class' type.
         """
-        return SchemaField(name=name, field_type=self.type_.value, mode='ARRAY')
+        if isinstance(self.type_, BQScalarType):
+            return SchemaField(name=name, field_type=self.type_.value, mode='REPEATED')
+        raise NotImplementedError("SchemaField for ARRAY of {} not implemented"
+                                  .format(self.type_))
 
     def __repr__(self):
         return 'BQArray({})'.format(self.type_)
@@ -328,14 +337,14 @@ class BQArray(BQType):
         """
 
         # First, check if the element is null.  If it is, isnull will return true.
-        # If it isn't, element is a list, and so pd.isnull will return an np.ndarray, which
+        # If it isn't, element is a tuple, and so pd.isnull will return an np.ndarray, which
         # can't be tested for truthiness directly, but we know therefore isn't null.
         isnull = pd.isnull(element)
         if not isinstance(isnull, np.ndarray) and isnull:
             return None
-        if not isinstance(element, list):
-            raise ValueError("Array typed object {!r} isn't a list".format(element))
-        return [self.type_.convert(subelement) for subelement in element]
+        if not isinstance(element, tuple):
+            raise ValueError("Array typed object {!r} isn't a tuple".format(element))
+        return tuple(self.type_.convert(subelement) for subelement in element)
 
 
 class TypedSeries(object):

@@ -49,8 +49,8 @@ from typing import List, cast  # noqa: F401
 from bq_abstract_syntax_tree import EMPTY_NODE, Field
 from bq_operator import binary_operator_expression_rule
 from dataframe_node import QueryExpression, Select, SetOperation, TableReference
-from evaluatable_node import (Case, Cast, Count, Exists, Extract, FunctionCall, If, InCheck, Not,
-                              NullCheck, Selector, StarSelector, UnaryNegation)
+from evaluatable_node import (Array, Array_agg, Case, Cast, Count, Exists, Extract, FunctionCall,
+                              If, InCheck, Not, NullCheck, Selector, StarSelector, UnaryNegation)
 from join import DataSource, FromItemType, Join
 from query_helper import AppliedRuleOutputType  # noqa: F401
 from query_helper import apply_rule, separated_sequence
@@ -106,6 +106,8 @@ def core_expression(tokens):
     """Grammar rule for a core set of expressions that can be nested inside other expressions.
 
     The current set of handled expressions are:
+    - Array
+    - Array_agg
     - Count
     - Function call
     - A field (column)
@@ -118,14 +120,22 @@ def core_expression(tokens):
     - Another expression nested in parentheses
     - Not
     - Unary negation
-
-    TODO(PM-3296) add Array, Array aggregation
     """
     return apply_rule(
         [
             # COUNT(*), COUNT(DISTINCT expression), COUNT(expression)
             wrap(Count.create_count_function_call,
                  ('COUNT', '(', ['*', (['DISTINCT', None], expression)], ')', [over_clause, None])),
+
+            wrap(Array_agg.create_function_call,
+                 ('ARRAY_AGG', '(', ['DISTINCT', None], expression,
+                  [(['IGNORE', 'RESPECT'], 'NULLS'), None],
+                  [(grammar_literal('ORDER', 'BY'),
+                    separated_sequence(identifier, ['ASC', 'DESC', None], ',')),
+                   None],
+                  [('LIMIT', literal), None],
+                  ')',
+                  [over_clause, None])),
 
             wrap(FunctionCall.create,
                  (identifier, '(', [separated_sequence(expression, ','), None], ')', [over_clause,
@@ -143,6 +153,9 @@ def core_expression(tokens):
             (Cast, '(', expression, 'AS', identifier, ')'),
 
             (Exists, '(', query_expression, ')'),
+
+            (Array, [('ARRAY', '<', identifier, '>'), None],
+             '[', [separated_sequence(expression, ','), None], ']'),
 
             (Extract, '(', identifier, 'FROM', expression, ')'),
 
