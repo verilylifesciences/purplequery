@@ -102,26 +102,6 @@ def wrap(wrapper, rule):
     return wrapped_rule
 
 
-def function_call(tokens):
-    '''Grammar rule matching function calls.
-
-    Args:
-        tokens: Parts of the user's query (split by spaces into tokens) that
-        are not yet parsed
-    Returns:
-        A tuple of the function call node representing the result of applying the rule
-        to the tokens, and the remaining unmatched tokens, or None and all the tokens if
-        the rule does not match.
-    '''
-    matched_function, new_tokens = apply_rule(
-            (identifier, '(', [separated_sequence(expression, ','), None], ')', [over_clause,
-                                                                                 None]),
-            tokens)
-    if matched_function is None:
-        return None, tokens
-    return FunctionCall.create(*matched_function), new_tokens
-
-
 def core_expression(tokens):
     """Grammar rule for a core set of expressions that can be nested inside other expressions.
 
@@ -150,8 +130,6 @@ def core_expression(tokens):
             wrap(FunctionCall.create,
                  (identifier, '(', [separated_sequence(expression, ','), None], ')', [over_clause,
                                                                                       None])),
-            function_call,
-
             field,
 
             (Case, [expression, None], 'WHEN',
