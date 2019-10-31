@@ -29,6 +29,8 @@ PurpleQuery supports
 - Arithmetic expressions
 
 Functions including
+- ARRAY
+- ARRAY_AGG
 - CASE
 - CAST
 - CONCAT
@@ -48,7 +50,6 @@ Functions including
 
 ## Unsupported features
 - SELECT table.\*, EXCEPT/REPLACE
-- ARRAYs
 - STRUCTs
 - many functions
 - set operations besides UNION ALL
