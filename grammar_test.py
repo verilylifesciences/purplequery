@@ -162,7 +162,7 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(['a'])
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Field))
+        assert isinstance(ast, Field)
         self.assertEqual(ast.path, ('a',))
 
     @data(
@@ -257,9 +257,9 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, _AggregatingFunctionCall))
+        assert isinstance(ast, _AggregatingFunctionCall)
         self.assertEqual(ast.children, [countee])
-        self.assertIsInstance(ast.function_info, Count)
+        assert isinstance(ast.function_info, Count)
         self.assertEqual(ast.function_info.name(), 'COUNT')
         self.assertEqual(ast.function_info.distinct, distinct)
 
@@ -276,7 +276,7 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = post_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, NullCheck))
+        assert isinstance(ast, NullCheck)
         self.assertEqual(ast.children[0], expression)
         self.assertEqual(ast.direction, direction)
 
@@ -296,7 +296,7 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = post_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, InCheck))
+        assert isinstance(ast, InCheck)
         self.assertEqual(ast.children[0], expression)
         self.assertEqual(ast.direction, bool_direction)
         self.assertEqual(ast.children[1:], elements)
@@ -309,8 +309,9 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, If))
+        assert isinstance(ast, If)
         condition, then, else_ = ast.children
+        assert isinstance(condition, BinaryExpression)
         left, right = condition.children
         self.assertEqual(left, Value(3, BQScalarType.INTEGER))
         self.assertEqual(condition.operator_info.operator, '<')
@@ -325,7 +326,8 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Not))
+        assert isinstance(ast, Not)
+        assert isinstance(ast.children[0], BinaryExpression)
         left, right = ast.children[0].children
         self.assertEqual(left, Value(2, BQScalarType.INTEGER))
         self.assertEqual(ast.children[0].operator_info.operator, '=')
@@ -338,7 +340,7 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, UnaryNegation))
+        assert isinstance(ast, UnaryNegation)
         self.assertEqual(ast.children[0], Value(2, BQScalarType.INTEGER))
 
     def test_case(self):
@@ -350,14 +352,16 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Case))
+        assert isinstance(ast, Case)
 
         first_when, first_then, second_when, second_then, else_ = ast.children
+        assert isinstance(first_when, BinaryExpression)
         self.assertEqual(first_when.children[0], Field(('a',)))
         self.assertEqual(first_when.operator_info.operator, '=')
         self.assertEqual(first_when.children[1], Value(1, BQScalarType.INTEGER))
         self.assertEqual(first_then, Value(1, BQScalarType.INTEGER))
 
+        assert isinstance(second_when, BinaryExpression)
         self.assertEqual(second_when.children[0], Field(('a',)))
         self.assertEqual(second_when.operator_info.operator, '=')
         self.assertEqual(second_when.children[1], Value(2, BQScalarType.INTEGER))
@@ -371,7 +375,7 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Cast))
+        assert isinstance(ast, Cast)
         self.assertEqual(ast.children[0], Value(1, BQScalarType.INTEGER))
         self.assertEqual(ast.type_, BQScalarType.STRING)
 
@@ -381,9 +385,11 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Exists))
-        self.assertTrue(isinstance(ast.subquery, QueryExpression))
-        self.assertTrue(isinstance(ast.subquery.base_query, Select))
+        assert isinstance(ast, Exists)
+        assert isinstance(ast.subquery, QueryExpression)
+        assert isinstance(ast.subquery.base_query, Select)
+        assert isinstance(ast.subquery.base_query.from_, DataSource)
+        assert isinstance(ast.subquery.base_query.from_.first_from[0], TableReference)
         self.assertEqual(ast.subquery.base_query.from_.first_from[0].path, ('Table',))
 
     def test_extract(self):
@@ -392,8 +398,9 @@ class GrammarTest(unittest.TestCase):
         ast, leftover = core_expression(tokens)
 
         self.assertEqual(leftover, [])
-        self.assertTrue(isinstance(ast, Extract))
+        assert isinstance(ast, Extract)
         self.assertEqual(ast.part, 'DAY')
+        assert isinstance(ast.children[0], Field)
         self.assertEqual(ast.children[0].path, ('date_field',))
 
 

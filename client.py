@@ -282,6 +282,8 @@ class Client:
         columns = list(typed_dataframe.dataframe.columns)
         for column, bq_type in zip(columns, typed_dataframe.types):
             if isinstance(bq_type, BQArray):
+                if not isinstance(bq_type.type_, BQScalarType):
+                    raise ValueError('Arrays of {} are not supported'.format(bq_type.type_))
                 converters[column] = _make_array_reader(bq_type.type_)
 
         # Having set up our special type handling, we now call read_csv and load it into the

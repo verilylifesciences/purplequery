@@ -67,6 +67,8 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
     |\
     | Selector                             # Wrapper around the outermost expressions in a Select
     |\
+    | Struct                               # A STRUCT expression
+    |\
     | UnaryNegation                        # -expression
     |\
     | NonAggregatingFunctionCall           # A call to a function that doesn't aggregate: concat, timestamp, ...
