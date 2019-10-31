@@ -6,7 +6,7 @@
 import datetime
 import unittest
 from re import escape
-from typing import Any, List, Optional, Tuple, Union  # noqa: F401
+from typing import Any, List, Optional, Sequence, Tuple, Union  # noqa: F401
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,8 @@ from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
                                      AbstractSyntaxTreeNode, DatasetTableContext, EvaluatableNode,
                                      EvaluationContext, Field, GroupedBy, _EmptyNode)
-from bq_types import BQScalarType, BQType, PythonType, TypedDataFrame, TypedSeries  # noqa: F401
+from bq_types import (BQArray, BQScalarType, BQStructType, BQType, PythonType,  # noqa: F401
+                      TypedDataFrame, TypedSeries)
 from dataframe_node import QueryExpression, Select, TableReference
 from evaluatable_node import LiteralType  # noqa: F401
 from evaluatable_node import (Case, Cast, Exists, Extract, FunctionCall, If, InCheck, Not,
@@ -177,6 +178,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         dict(selectors='array_agg(a), [b]', expected_result=[[(2, 4), (1,)], [(5, None), (2,)]]),
         dict(selectors='array_agg(a), [7, 8]', expected_result=[[(2, 4), (7, 8)],
                                                                 [(5, None), (7, 8)]]),
+        dict(selectors='array_agg(a), b+10', expected_result=[[(2, 4), 11], [(5, None), 12]]),
     )
     @unpack
     def test_aggregate_functions_in_group_by(self, selectors, expected_result):
@@ -192,6 +194,131 @@ class EvaluatableNodeTest(unittest.TestCase):
         result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)
         self.assertEqual(result.to_list_of_lists(), expected_result)
+
+    @data(
+        # Test all variations of creating a struct (typed, typeless, tuple),
+        # with and without named fields, with one field, and then with two
+        # fields.
+
+        dict(query='SELECT STRUCT<INTEGER>(1)',
+             expected_result=(1,),
+             expected_type=BQStructType([None], [BQScalarType.INTEGER])),
+        dict(query='SELECT STRUCT<a INTEGER>(1)',
+             expected_result=(1,),
+             expected_type=BQStructType(['a'], [BQScalarType.INTEGER])),
+        dict(query='SELECT STRUCT(1 AS a)',
+             expected_result=(1,),
+             expected_type=BQStructType(['a'], [BQScalarType.INTEGER])),
+        dict(query='SELECT STRUCT(1)',
+             expected_result=(1,),
+             expected_type=BQStructType([None], [BQScalarType.INTEGER])),
+        # Note: no test of single-element tuple syntax, as that would just be a
+        # parenthesized expression, there's no analogue to Python's trailing comma.
+
+        dict(query='SELECT STRUCT<INTEGER, STRING>(1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType([None, None], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT<a INTEGER, STRING>(1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType(['a', None], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT<INTEGER, b STRING>(1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType([None, 'b'], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT<a INTEGER, b STRING>(1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType(['a', 'b'], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT(1 AS a, "a" as b)',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType(['a', 'b'], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT(1, "a" as b)',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType([None, 'b'], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT(1 AS a, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType(['a', None], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT STRUCT(1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType([None, None], [BQScalarType.INTEGER, BQScalarType.STRING])),
+        dict(query='SELECT (1, "a")',
+             expected_result=(1, 'a'),
+             expected_type=BQStructType([None, None], [BQScalarType.INTEGER, BQScalarType.STRING])),
+    )
+    @unpack
+    def test_struct_constant_expressions(self, query, expected_result, expected_type):
+        # type: (str, Tuple[Optional[int], ...], BQStructType) -> None
+        table_context = DatasetTableContext({})
+        node, leftover = select_rule(tokenize(query))
+        self.assertFalse(leftover)
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(table_context)
+        self.assertEqual(result.to_list_of_lists(), [[expected_result]])
+        self.assertEqual(result.types, [expected_type])
+
+    @data(
+        # Test all three struct syntaxes, selecting a column as one field, a
+        # constant as the other.
+        dict(query='SELECT (a, "a") FROM my_table',
+             expected_result=[[(1, 'a')], [(2, 'a')]],
+             expected_types=[
+                 BQStructType([None, None], [BQScalarType.INTEGER, BQScalarType.STRING])]),
+        dict(query='SELECT STRUCT(a as x, "a" as y) FROM my_table',
+             expected_result=[[(1, 'a')], [(2, 'a')]],
+             expected_types=[
+                 BQStructType(['x', 'y'], [BQScalarType.INTEGER, BQScalarType.STRING])]),
+        dict(query='SELECT STRUCT<x INTEGER, y STRING>(a, "a") FROM my_table',
+             expected_result=[[(1, 'a')], [(2, 'a')]],
+             expected_types=[
+                 BQStructType(['x', 'y'], [BQScalarType.INTEGER, BQScalarType.STRING])]),
+    )
+    @unpack
+    def test_struct_field_and_constant(self, query, expected_result, expected_types):
+        # type: (str, List[List[Tuple[Optional[int], ...]]], Sequence[BQStructType]) -> None
+        node, leftover = select_rule(tokenize(query))
+        self.assertFalse(leftover)
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(self.small_table_context)
+        self.assertEqual(result.to_list_of_lists(), expected_result)
+        self.assertEqual(result.types, expected_types)
+
+    @data(
+        # Test combination types of arrays and structs.
+        dict(query='SELECT ([1], "a")',
+             expected_result=((1,), 'a'),
+             expected_type=BQStructType([None, None], [BQArray(BQScalarType.INTEGER),
+                                                       BQScalarType.STRING])),
+        dict(query='SELECT STRUCT<x ARRAY<INTEGER>, y STRING>(ARRAY<INTEGER>[1], "a")',
+             expected_result=((1,), 'a'),
+             expected_type=BQStructType(['x', 'y'], [BQArray(BQScalarType.INTEGER),
+                                                     BQScalarType.STRING])),
+        dict(query='SELECT [(1, "a")]',
+             expected_result=((1, 'a'), ),
+             expected_type=BQArray(BQStructType([None, None], [BQScalarType.INTEGER,
+                                                               BQScalarType.STRING]))),
+        dict(query='SELECT [STRUCT<a INTEGER, b STRING>(1, "a"), (2, "b")]',
+             expected_result=((1, 'a'), (2, 'b')),
+             expected_type=BQArray(BQStructType(['a', 'b'], [BQScalarType.INTEGER,
+                                                             BQScalarType.STRING]))),
+        # Test that an array of structs merges and coerces the types of the
+        # structs.
+        dict(query='SELECT [STRUCT<a FLOAT, STRING>(1.0, "a"), STRUCT<INTEGER, b STRING>(2, "b")]',
+             expected_result=((1.0, 'a'), (2.0, 'b')),
+             expected_type=BQArray(BQStructType(['a', 'b'], [BQScalarType.FLOAT,
+                                                             BQScalarType.STRING]))),
+        dict(query='SELECT [STRUCT<a INTEGER, b ARRAY<STRING> >(1, ["a"]), (2, ["b", "c"])]',
+             expected_result=((1, ('a',)), (2, ('b', 'c'))),
+             expected_type=BQArray(BQStructType(['a', 'b'], [BQScalarType.INTEGER,
+                                                             BQArray(BQScalarType.STRING)]))),
+    )
+    @unpack
+    def test_complex_types(self, query, expected_result, expected_type):
+        # type: (str, Tuple[Optional[int], ...], BQType) -> None
+        table_context = DatasetTableContext({})
+        node, leftover = select_rule(tokenize(query))
+        self.assertFalse(leftover)
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(table_context)
+        self.assertEqual(result.to_list_of_lists(), [[expected_result]])
+        self.assertEqual(result.types, [expected_type])
 
     @data(
         dict(query='SELECT ARRAY_AGG(a)',
@@ -224,15 +351,29 @@ class EvaluatableNodeTest(unittest.TestCase):
     @data(
         dict(query='SELECT [1,2,"a"]',
              error='Cannot implicitly coerce the given types'),
+        dict(query='SELECT STRUCT<INT64>(3.7)',
+             error='Struct field 1 has type FLOAT which does not coerce to INTEGER'),
+        dict(query='SELECT ARRAY<INT64>[3.7]',
+             error='Array specifies type INTEGER, incompatible with values of type FLOAT'),
         dict(query='SELECT ARRAY<INT64>[1,2,"a"]',
              error='Cannot implicitly coerce the given types'),
         dict(query='SELECT ARRAY<STRING>[1,2]',
              error='Cannot implicitly coerce the given types'),
         dict(query='SELECT [[1]]',
-             error=r'Cannot create arrays of type BQArray\(INTEGER\)'),
+             error='Cannot create arrays of arrays'),
+        dict(query='SELECT [(1, 2), (3, 4, 5)]',
+             error='Cannot merge .* number of fields varies'),
+        dict(query='SELECT [STRUCT(1 as a, 2 as b), STRUCT(3 as x, 4 as b)]',
+             error='Cannot merge Structs; field names .* do not match'),
+        # same types in different orders can't merge.
+        dict(query='SELECT [(1, "a"), ("b", 2)]',
+             error='Cannot implicitly coerce the given types'),
+        # same names in different orders can't merge
+        dict(query='SELECT [STRUCT(1 as a, 2 as b), STRUCT(3 as b, 4 as a)]',
+             error='Cannot merge Structs; field names .* do not match'),
     )
     @unpack
-    def test_array_errors(self, query, error):
+    def test_complex_type_errors(self, query, error):
         # type: (str, str) -> None
         node, leftover = select_rule(tokenize(query))
         self.assertFalse(leftover)

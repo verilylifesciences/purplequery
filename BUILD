@@ -294,3 +294,16 @@ py2and3_test(
     srcs = ["tokenizer_test.py"],
     deps = [":tokenizer"],
 )
+
+py_library(
+    name = "type_grammar",
+    srcs = ["type_grammar.py"],
+    deps = [
+    ],
+)
+
+py2and3_test(
+    name = "type_grammar_test",
+    srcs = ["type_grammar_test.py"],
+    deps = [":type_grammar"],
+)

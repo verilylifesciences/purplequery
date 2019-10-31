@@ -41,6 +41,7 @@ for version in 2 3; do
   python$version -m query_test
   python$version -m terminals_test
   python$version -m tokenizer_test
+  python$version -m type_grammar_test
 
   deactivate
 done

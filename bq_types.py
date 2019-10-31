@@ -17,8 +17,8 @@ This module also provides two classes representing the basic data types used in 
 import datetime
 import enum
 from abc import ABCMeta, abstractmethod
-from typing import (Any, AnyStr, Callable, Dict, List, Optional, Tuple, Type, Union,  # noqa: F401
-                    cast)
+from typing import (Any, AnyStr, Callable, Dict, List, Optional, Sequence, Tuple,  # noqa: F401
+                    Type, Union, cast)
 
 import numpy as np
 import pandas as pd
@@ -30,7 +30,7 @@ from google.cloud.bigquery.schema import SchemaField
 NoneType = type(None)
 ScalarPythonType = Union[bool, datetime.date, datetime.datetime, int, float, str, NoneType,
                          six.text_type]
-PythonType = Union[ScalarPythonType, Tuple[ScalarPythonType, ...]]
+PythonType = Union[ScalarPythonType, Tuple]
 
 # These types are possible values in a Pandas DataFrame or Series.
 # Compare to PythonType above: numeric and boolean types use NumPy types, time types use
@@ -276,11 +276,72 @@ _BQ_SCALAR_TYPE_TO_PYTHON_TYPE = {
 }  # type: Dict[BQScalarType, Callable[[PandasType], ScalarPythonType]]
 
 
-ArrayableType = Union[BQScalarType]  # TODO: Add STRUCT types
+class BQStructType(BQType):
+    '''Representation of a BigQuery STRUCT type.
+
+    Note: the corresponding STRUCT *value* is represented as a tuple
+    '''
+
+    # A cache of objects that represent STRUCT types, mapping the specification of a type to a
+    # type object.  This is used to ensure there is only one object representing each STRUCT type.
+    _STRUCT_TYPE_OBJECTS = {}  # type: Dict[Tuple[Tuple[Optional[str], ...], Tuple[Optional[BQType], ...]], BQStructType]  # noqa: E501
+
+    def __new__(cls, fields, types):
+        # type: (Sequence[Optional[str]], Sequence[Optional[BQType]]) -> BQStructType
+        """Ensures that there is only one instance of BQStruct per component type.
+
+        Args:
+            fields: A list of optional string field names
+            types: A list of optional types.
+
+        Returns:
+            A singleton Struct type object containing the provided type_
+        """
+        key = (tuple(fields), tuple(types))
+        if key not in cls._STRUCT_TYPE_OBJECTS:
+            struct = super(BQStructType, cls).__new__(cls)
+            struct.__init__(fields, types)
+            cls._STRUCT_TYPE_OBJECTS[key] = struct
+        return cls._STRUCT_TYPE_OBJECTS[key]
+
+    def __init__(self, fields, types):
+        # type: (Sequence[Optional[str]], Sequence[Optional[BQType]]) -> None
+        if len(fields) != len(types):
+            raise ValueError("length of fields and types don't match: {}!={}"
+                             .format(len(fields), len(types)))
+        self.fields = fields
+        self.types = types
+
+    def __repr__(self):
+        return 'STRUCT<{}>'.format(','.join('{} {}'.format(field, type_)
+                                            for field, type_ in zip(self.fields, self.types)))
+
+    def to_schema_field(self, name):
+        # type: (str) -> SchemaField
+        """Converts this type to a BigQuery SchemaField.
+
+        Args:
+            name: The name of the column.  This class represents a type; SchemaField represents
+            a column, so it includes the type and also the name of the column.
+
+        Returns:
+            A SchemaField object corresponding to a column containing this class' type.
+        """
+        raise NotImplementedError("SchemaField for STRUCT not implemented")
+
+    def convert(self, element):
+        # type: (PandasType) -> PythonType
+        return tuple(type_.convert(subelt) for type_, subelt in zip(self.types, element))
+
+
+ArrayableType = Union[BQScalarType, BQStructType]
 
 
 class BQArray(BQType):
-    """Representation of a BigQuery ARRAY type."""
+    """Representation of a BigQuery ARRAY type.
+
+    The corresponding array *value* is represented as a tuple
+    """
     _ARRAY_TYPE_OBJECTS = {}  # type: Dict[ArrayableType, BQArray]
 
     def __new__(cls, type_):
@@ -433,6 +494,64 @@ class TypedDataFrame(object):
         return rows
 
 
+def _coerce_names(names):
+    # type: (Sequence[str]) -> str
+    '''Coerce a set of field names.  Names agree if equal or if one is None
+
+
+    This function is called in the context of coercing STRUCT types like
+    STRUCT<a INTEGER, b> with STRUCT(1 as a, 7).  In that case, it would be called twice, one for
+    the first column (to merge the two 'a's into 'a') and once for the second column (to merge 'b'
+    with the unnamed column in the second type).
+
+    Args:
+        names: A sequence of names (strings).  These are all names for the *same* field for
+            different STRUCT types that are being coerced to a common type.
+    Raises:
+        ValueError if the names cannot be coerced (if two of the strings are both non-None and
+        different).
+    Returns:
+        The single name matching all the names, or None if no non-empty names were provided.
+    '''
+    nonempty_names = {name for name in names if name is not None}
+    if not nonempty_names:
+        return None
+    if len(nonempty_names) > 1:
+        raise ValueError("Cannot merge Structs; field names {} do not match"
+                         .format(nonempty_names))
+    return nonempty_names.pop()
+
+
+def _coerce_structs(struct_types):
+    # type: (Sequence[BQStructType]) -> BQStructType
+    '''Coerce a sequence of struct types into one.
+
+    Struct types are merged field-by-field.  If the number of fields is different, they don't match.
+    Two fields are merged by merging the names (see _coerce_names) and the types (recursively).
+
+    Args:
+        struct_types: a sequence of struct types.
+    Raises:
+        ValueError: if the types cannot be coerced.
+    Returns:
+        A single type that matches all the provided types.
+    '''
+    if not struct_types:
+        return None
+
+    num_fieldses = [len(type_.fields) for type_ in struct_types]
+    if not all(num_fields == num_fieldses[0] for num_fields in num_fieldses[1:]):
+        raise ValueError("Cannot merge types {}; number of fields varies!"
+                         .format(struct_types))
+    num_fields = num_fieldses[0]  # Now that we know they're all equal.
+
+    field_types = [implicitly_coerce(*[type_.types[i] for type_ in struct_types])
+                   for i in range(num_fields)]
+    field_names = [_coerce_names([type_.fields[i] for type_ in struct_types])
+                   for i in range(num_fields)]
+    return BQStructType(field_names, field_types)
+
+
 def implicitly_coerce(*types):
     # type: (BQType) -> BQType
     '''Given some number of types, return their common supertype, if any.
@@ -464,4 +583,7 @@ def implicitly_coerce(*types):
         return BQScalarType.DATE
     if all(type_ in [BQScalarType.STRING, BQScalarType.TIMESTAMP] for type_ in types):
         return BQScalarType.TIMESTAMP
+    if all(isinstance(type_, BQStructType) for type_ in types):
+        # cast is required due to mypy bug.
+        return _coerce_structs(cast(Tuple[BQStructType, ...], types))
     raise ValueError("Cannot implicitly coerce the given types: {}".format(types))

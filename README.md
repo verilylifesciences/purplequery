@@ -45,12 +45,12 @@ Functions including
 - MOD
 - NOT
 - ROW\_NUMBER
+- STRUCT
 - SUM
 - TIMESTAMP
 
 ## Unsupported features
 - SELECT table.\*, EXCEPT/REPLACE
-- STRUCTs
 - many functions
 - set operations besides UNION ALL
 - UPDATE and other mutation operations in queries (these are supported via the

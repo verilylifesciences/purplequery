@@ -24,6 +24,9 @@ be optional.
 The separated_sequence function returns a grammar rule matching one or more occurrences of a rule,
 separated by ocurrences of another rule.  Examples include expressions with binary operators, or
 the arguments to a function.
+
+The wrap function calls a specified function on the result of a successful rule application,
+allowing construction of an object from the rule's output.
 '''
 
 
@@ -271,3 +274,26 @@ def apply_rule(rule, tokens):
         return _apply_rule_none(rule, tokens)
     else:
         return _apply_rule_method(rule, tokens)
+
+
+def wrap(wrapper, rule):
+    '''Returns a grammar rule that, if `rule' matches, wraps the result by calling `wrapper'
+
+    Args:
+        wrapper: A function to wrap the rule's result.
+        rule: Any grammar rule
+    Returns:
+        If the rule matches, the result of calling wrapper on the rule's result, plus leftover
+        unmatched tokens.  Otherwise, returns None and all the tokens.
+    '''
+    def wrapped_rule(tokens):
+        # type: (List[str]) -> AppliedRuleOutputType
+        result, new_tokens = apply_rule(rule, tokens)
+        if result is None:
+            return None, tokens
+        if (isinstance(rule, tuple)
+                and len([subrule for subrule in rule if not isinstance(subrule, str)]) > 1):
+            return wrapper(*result), new_tokens
+        else:
+            return wrapper(result), new_tokens
+    return wrapped_rule

@@ -50,11 +50,13 @@ from bq_abstract_syntax_tree import EMPTY_NODE, Field
 from bq_operator import binary_operator_expression_rule
 from dataframe_node import QueryExpression, Select, SetOperation, TableReference
 from evaluatable_node import (Array, Array_agg, Case, Cast, Count, Exists, Extract, FunctionCall,
-                              If, InCheck, Not, NullCheck, Selector, StarSelector, UnaryNegation)
+                              If, InCheck, Not, NullCheck, Selector, StarSelector, Struct,
+                              UnaryNegation)
 from join import DataSource, FromItemType, Join
 from query_helper import AppliedRuleOutputType  # noqa: F401
-from query_helper import apply_rule, separated_sequence
+from query_helper import apply_rule, separated_sequence, wrap
 from terminals import grammar_literal, identifier, literal
+from type_grammar import array_type, scalar_type, struct_type
 
 
 def field(tokens):
@@ -83,26 +85,8 @@ def field(tokens):
     return Field(field_path), new_tokens
 
 
-def wrap(wrapper, rule):
-    '''Returns a grammar rule that, if `rule' matches, wraps the result by calling `wrapper'
-
-    Args:
-        wrapper: A function to wrap the rule's result.
-        rule: Any grammar rule
-    Returns:
-        If the rule matches, the result of calling wrapper on the rule's result, plus leftover
-        unmatched tokens.  Otherwise, returns None and all the tokens.
-    '''
-    def wrapped_rule(tokens):
-        # type: (List[str]) -> AppliedRuleOutputType
-        result, new_tokens = apply_rule(rule, tokens)
-        if result is None:
-            return None, tokens
-        return wrapper(*result), new_tokens
-    return wrapped_rule
-
-
 def core_expression(tokens):
+    # type: (List[str]) -> AppliedRuleOutputType
     """Grammar rule for a core set of expressions that can be nested inside other expressions.
 
     The current set of handled expressions are:
@@ -150,14 +134,26 @@ def core_expression(tokens):
 
             (If, '(', expression, ',', expression, ',', expression, ')'),
 
-            (Cast, '(', expression, 'AS', identifier, ')'),
+            (Cast, '(', expression, 'AS', scalar_type, ')'),
 
             (Exists, '(', query_expression, ')'),
 
-            (Array, [('ARRAY', '<', identifier, '>'), None],
-             '[', [separated_sequence(expression, ','), None], ']'),
+            (Array, [array_type, None], '[', [separated_sequence(expression, ','), None], ']'),
 
             (Extract, '(', identifier, 'FROM', expression, ')'),
+
+            # Typeless struct syntax
+            wrap(Struct.create_from_typeless,
+                 ('STRUCT', '(', separated_sequence((expression, [('AS', identifier), None]), ','),
+                  ')',)),
+
+            # Typed struct syntax
+            wrap(Struct.create_from_typed,
+                 (struct_type, '(', separated_sequence(expression, ','), ')')),
+
+            # Tuple syntax for structs (anonymous column names, implicit types)
+            wrap(Struct.create_from_tuple,
+                 ('(', expression, ',', separated_sequence(expression, ','), ')')),
 
             ('(', expression, ')'),
 

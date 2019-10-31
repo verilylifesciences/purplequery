@@ -18,8 +18,8 @@ from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa
                                      EvaluatableNodeThatAggregatesOrGroups,
                                      EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
-from bq_types import (BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
-                      implicitly_coerce)
+from bq_types import (BQArray, BQScalarType, BQStructType, BQType, TypedDataFrame,  # noqa: F401
+                      TypedSeries, implicitly_coerce)
 from six.moves import reduce
 
 NoneType = type(None)
@@ -30,7 +30,7 @@ class Array(EvaluatableNodeWithChildren):
     '''An ARRAY expression, grouping several columns into a column of ARRAYs.'''
 
     def __init__(self, maybe_type, maybe_values):
-        # type: (Union[str, _EmptyNode], Union[Sequence[EvaluatableNode], _EmptyNode]) -> None
+        # type: (Union[BQArray, _EmptyNode], Union[Sequence[EvaluatableNode], _EmptyNode]) -> None
         '''Creates an array from a literal in the grammar.
 
         Args:
@@ -38,8 +38,7 @@ class Array(EvaluatableNodeWithChildren):
             maybe_values: If the node is present, this is a sequence of expressions giving the
                 contents of the array.
         '''
-        self.type_ = (BQScalarType.from_string(maybe_type) if not isinstance(maybe_type, _EmptyNode)
-                      else None)
+        self.array_type = maybe_type if not isinstance(maybe_type, _EmptyNode) else None
         if isinstance(maybe_values, _EmptyNode):
             # If this is an empty array, we need a placeholder child so that at
             # evaluation time, we know how many rows of empty arrays to produce.
@@ -51,26 +50,30 @@ class Array(EvaluatableNodeWithChildren):
 
     def copy(self, new_children):
         # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
-        return Array(EMPTY_NODE if self.type_ is None else self.type_.value,
-                     EMPTY_NODE if self.empty else new_children)
+        return Array(self.array_type or EMPTY_NODE, EMPTY_NODE if self.empty else new_children)
 
     def _evaluate_node(self, values):
         # type: (List[TypedSeries]) -> TypedSeries
         value_type = implicitly_coerce(*[value.type_ for value in values])
-        if self.type_:
-            type_ = implicitly_coerce(value_type, self.type_)
+        if self.array_type:
+            join_type = implicitly_coerce(value_type, self.array_type.type_)
+            if join_type != self.array_type.type_:
+                raise ValueError("Array specifies type {}, incompatible with values of type {}"
+                                 .format(self.array_type.type_, value_type))
+            array_type = self.array_type
+        elif not isinstance(value_type, (BQScalarType, BQStructType)):
+            raise ValueError("Cannot create arrays of arrays")
         else:
-            type_ = value_type
+            array_type = BQArray(value_type)
         if self.empty:
             # If this is an empty array, we have a placeholder child so that
             # we know how many rows of empty arrays to produce.
             arrays = [()] * len(values[0].series)
         else:
             arrays = list(zip(*[value.series for value in values]))
-        if not isinstance(type_, BQScalarType):
-            raise ValueError("Cannot create arrays of type {}".format(type_))
-            # TODO allow ARRAYs of STRUCTs
-        return TypedSeries(pd.Series(arrays, index=values[0].series.index), BQArray(type_))
+        if not isinstance(array_type.type_, (BQScalarType, BQStructType)):
+            raise ValueError("Cannot create arrays of type {}".format(array_type.type_))
+        return TypedSeries(pd.Series(arrays, index=values[0].series.index), array_type)
 
 
 class Case(MarkerSyntaxTreeNode, EvaluatableNodeWithChildren):
@@ -581,6 +584,79 @@ class Value(EvaluatableLeafNode):
         return TypedSeries(pd.Series([self.value] * len(context.table.dataframe),
                                      index=_get_index(context.table.dataframe)),
                            self.type_)
+
+
+class Struct(EvaluatableNodeWithChildren):
+    '''A STRUCT expression.'''
+
+    def __init__(self, type_, expressions):
+        # type: (BQStructType, Sequence[EvaluatableNode]) -> None
+        self.type_ = type_
+        self.children = expressions
+
+    def copy(self, new_children):
+        # type: (Sequence[EvaluatableNode]) -> EvaluatableNode
+        return Struct(self.type_, new_children)
+
+    def _evaluate_node(self, values):
+        # type: (List[TypedSeries]) -> TypedSeries
+        value_types = [value.type_ for value in values]
+        type_ = implicitly_coerce(self.type_, BQStructType([None] * len(values), value_types))
+        if self.type_:
+            if not isinstance(type_, BQStructType):
+                raise RuntimeError("STRUCT types coerced to non-STRUCT type {}".format(type_))
+            for i, (declared_type, coerced_type) in enumerate(zip(self.type_.types, type_.types)):
+                if declared_type and declared_type != coerced_type:
+                    raise ValueError('Struct field {} has type {} which does not coerce to {}'
+                                     .format(i + 1,  # enumerate is 0-up, we want to report 1-up
+                                             coerced_type, declared_type))
+
+        structs = list(zip(*[value.series for value in values]))
+        return TypedSeries(pd.Series(structs, index=values[0].series.index), type_)
+
+    @classmethod
+    def create_from_typeless(cls, maybe_named_fields):
+        # type: (Sequence[Tuple[EvaluatableNode, Union[_EmptyNode, str]]]) -> Struct
+        '''Creates a Struct from the typeless grammar syntax STRUCT(value [AS name], ...)
+
+        Args:
+            maybe_named_fields: A list of pairs.  The first element is a field's value, an
+                expression (evaluatable node), the second is an optional name for the field.
+        Returns:
+            A Struct abstract syntax tree node.
+        '''
+        children, maybe_names = list(zip(*maybe_named_fields))
+        maybe_names = tuple(maybe_name if not isinstance(maybe_name, _EmptyNode) else None
+                            for maybe_name in maybe_names)
+        return Struct(BQStructType(maybe_names, [None] * len(maybe_named_fields)), children)
+
+    @classmethod
+    def create_from_typed(cls, type_, expressions):
+        # type: (BQStructType, Sequence[EvaluatableNode]) -> Struct
+        '''Creates a Struct from the typed grammar syntax STRUCT<[name] type, ...>(value, ...).
+
+        Args:
+            type_: A declared STRUCT type for this structure.
+            expressions: The values of the fields of the structure.
+
+        Returns:
+            A Struct abstract syntax tree node.
+        '''
+        return Struct(type_, expressions)
+
+    @classmethod
+    def create_from_tuple(cls, first_expression, other_expressions):
+        # type: (EvaluatableNode, Sequence[EvaluatableNode]) -> Struct
+        '''Creates a Struct from the tuple grammar syntax (value, value, ...)
+
+        Args:
+            first_expression: The evaluatable node of the first field in the structure.
+            other_expressions: The evaluatable nodes of the rest of the fields in the structure
+                (if any).
+        Returns:
+            A Struct abstract syntax tree node.
+        '''
+        return Struct(None, [first_expression] + list(other_expressions))
 
 
 _SeriesMaybeGrouped = Union[pd.Series, pd.core.groupby.SeriesGroupBy]
