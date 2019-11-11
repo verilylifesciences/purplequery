@@ -48,7 +48,7 @@ from typing import List, cast  # noqa: F401
 
 from bq_abstract_syntax_tree import EMPTY_NODE, Field
 from bq_operator import binary_operator_expression_rule
-from dataframe_node import QueryExpression, Select, SetOperation, TableReference
+from dataframe_node import QueryExpression, Select, SetOperation, TableReference, Unnest
 from evaluatable_node import (Array, Array_agg, Case, Cast, Count, Exists, Extract, FunctionCall,
                               If, InCheck, Not, NullCheck, Selector, StarSelector, Struct,
                               UnaryNegation)
@@ -138,7 +138,7 @@ def core_expression(tokens):
 
             (Exists, '(', query_expression, ')'),
 
-            (Array, [array_type, None], '[', [separated_sequence(expression, ','), None], ']'),
+            array_expression,
 
             (Extract, '(', identifier, 'FROM', expression, ')'),
 
@@ -190,6 +190,12 @@ def post_expression(tokens):
 # additional content at the end), or a sequence of post_expressions separated by
 # binary operators.
 expression = binary_operator_expression_rule(post_expression)
+
+
+# Grammar rule for an array-typed exprsession
+array_expression = (
+    Array, [array_type, None], '[', [separated_sequence(expression, ','), None], ']')
+
 
 # Grammar rule for a clause added to analytic expressions to specify what window the function
 # is evaluated over.
@@ -370,7 +376,8 @@ def select(tokens):
 # Examples: "SomeTable", "(SELECT a from SomeTable)", "SomeTable AS t"
 from_item = ([
     (TableReference, separated_sequence(identifier, '.')),
-    ('(', query_expression, ')')
+    ('(', query_expression, ')'),
+    (Unnest, '(', array_expression, ')'),
 ], alias)
 
 
