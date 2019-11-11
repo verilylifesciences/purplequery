@@ -5,7 +5,7 @@
 
 import datetime
 import unittest
-from typing import List, Union  # noqa: F401
+from typing import List, Optional, Sequence, Union  # noqa: F401
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,8 @@ from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
 
 from bq_types import PythonType  # noqa: F401
-from bq_types import BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries, implicitly_coerce
+from bq_types import (BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries, _coerce_names,
+                      implicitly_coerce)
 
 # The NumPy types that are used to read in data into Pandas.
 NumPyType = Union[np.bool_, np.datetime64, np.float64, np.string_]
@@ -157,6 +158,28 @@ class BqTypesTest(unittest.TestCase):
         self.assertEqual(typed_dataframe.to_list_of_lists(),
                          [[True, (1.5, 2.5, 3.0)],
                           [False, (2.5, 3.5, 4.0)]])
+
+    @data(
+        dict(names=[],
+             expected_name=None),
+        dict(names=['foo'],
+             expected_name='foo'),
+        dict(names=['foo', None, 'foo'],
+             expected_name='foo'),
+    )
+    @unpack
+    def test_coerce_names(self, names, expected_name):
+        # type: (Sequence[str], Optional[str]) -> None
+        self.assertEqual(expected_name, _coerce_names(names))
+
+    @data(
+        dict(names=['foo', 'bar']),
+    )
+    @unpack
+    def test_coerce_names_error(self, names):
+        # type: (Sequence[str]) -> None
+        with self.assertRaisesRegexp(ValueError, 'field names .* do not match'):
+            _coerce_names(names)
 
     @data(
         ([BQScalarType.INTEGER], BQScalarType.INTEGER),
