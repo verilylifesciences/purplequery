@@ -450,13 +450,13 @@ class TypedSeries(object):
 
 class TypedDataFrame(object):
     def __init__(self, dataframe, types):
-        # type: (Union[pd.DataFrame, pd.DataFrameGroupBy], List[BQType]) -> None
+        # type: (Union[pd.DataFrame, pd.DataFrameGroupBy], Sequence[BQType]) -> None
         if isinstance(dataframe, pd.DataFrame) and len(dataframe.columns) != len(types):
             raise ValueError(
                 "Trying to create TypedDataFrame with mismatching type set; columns {!r} types {!r}"
                 .format(list(dataframe.columns), types))
         self._dataframe = dataframe
-        self._types = types
+        self._types = list(types)
 
     @property
     def dataframe(self):
@@ -496,8 +496,7 @@ class TypedDataFrame(object):
 
 def _coerce_names(names):
     # type: (Sequence[str]) -> str
-    '''Coerce a set of field names.  Names agree if equal or if one is None
-
+    '''Coerce a set of field names.  Names agree if equal or if one is None.
 
     This function is called in the context of coercing STRUCT types like
     STRUCT<a INTEGER, b> with STRUCT(1 as a, 7).  In that case, it would be called twice, one for

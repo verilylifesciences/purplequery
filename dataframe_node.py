@@ -14,9 +14,9 @@ from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
                                      AbstractSyntaxTreeNode, DataframeNode, DatasetType,
                                      EvaluatableNode, EvaluationContext, Field,
                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
-from bq_types import BQType, TypedDataFrame, TypedSeries, implicitly_coerce  # noqa: F401
-from evaluatable_node import StarSelector  # noqa: F401
-from evaluatable_node import Selector, Value
+from bq_types import (BQArray, BQStructType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
+                      implicitly_coerce)
+from evaluatable_node import Array, Selector, StarSelector, Value  # noqa: F401
 from join import DataSource  # noqa: F401
 from six.moves import reduce
 
@@ -349,3 +349,43 @@ class TableReference(DataframeNode):
         '''See parent, DataframeNode'''
         del outer_context  # Unused
         return table_context.lookup(self.path)
+
+
+class Unnest(DataframeNode, MarkerSyntaxTreeNode):
+    '''An expression unnesting an array into a column of data.'''
+
+    def __init__(self, array_node):
+        # type: (Array) -> None
+
+        self.array_node = array_node
+
+    def get_dataframe(self, table_context, outer_context=None):
+        # type: (TableContext, Optional[EvaluationContext]) -> Tuple[TypedDataFrame, Optional[str]]
+        '''See parent, DataframeNode'''
+        del outer_context  # Unused
+        context = EvaluationContext(table_context)
+        result = self.array_node.evaluate(context)
+        if isinstance(result, TypedDataFrame):
+            raise ValueError('UNNEST({}) did not result in one column'.format(self.array_node))
+        result_type, = result.types
+
+        if not isinstance(result_type, BQArray):
+            raise ValueError("UNNESTing a non-array-typed value: {}".format(result_type))
+
+        contained_type = result_type.type_
+
+        if len(result.series) != 1:
+            raise ValueError('UNNEST({}) did not result in one row'.format(self.array_node))
+        result_array, = result.to_list()
+        if not isinstance(result_array, tuple):
+            raise ValueError("UNNEST({}) resulted in {!r} rather than an array"
+                             .format(self.array_node, result_array))
+        if isinstance(contained_type, BQStructType):
+            result_dataframe = TypedDataFrame(
+                pd.DataFrame([[cell for cell in row] for row in result_array],
+                             columns=[field if field else '' for field in contained_type.fields]),
+                contained_type.types)
+        else:
+            result_dataframe = TypedDataFrame(
+                pd.DataFrame([[cell] for cell in result_array], columns=['']), [contained_type])
+        return result_dataframe, None

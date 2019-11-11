@@ -51,6 +51,7 @@ Functions including
 
 ## Unsupported features
 - SELECT table.\*, EXCEPT/REPLACE
+- UNNEST columns (UNNEST array expressions are supported)
 - many functions
 - set operations besides UNION ALL
 - UPDATE and other mutation operations in queries (these are supported via the
