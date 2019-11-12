@@ -13,20 +13,21 @@ import pandas as pd
 import six
 from ddt import data, ddt, unpack
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
-                                     AbstractSyntaxTreeNode, DatasetTableContext, EvaluatableNode,
-                                     EvaluationContext, Field, GroupedBy, _EmptyNode)
-from bq_types import (BQArray, BQScalarType, BQStructType, BQType, PythonType,  # noqa: F401
-                      TypedDataFrame, TypedSeries)
-from dataframe_node import QueryExpression, Select, TableReference
-from evaluatable_node import LiteralType  # noqa: F401
-from evaluatable_node import (Case, Cast, Exists, Extract, FunctionCall, If, InCheck, Not,
-                              NullCheck, Selector, UnaryNegation, Value)
-from grammar import select as select_rule
-from grammar import query_expression
-from query_helper import apply_rule
-from tokenizer import tokenize
+from purplequery.binary_expression import BinaryExpression
+from purplequery.bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
+                                                 AbstractSyntaxTreeNode, DatasetTableContext,
+                                                 EvaluatableNode, EvaluationContext, Field,
+                                                 GroupedBy, _EmptyNode)
+from purplequery.bq_types import (BQArray, BQScalarType, BQStructType, BQType,  # noqa: F401
+                                  PythonType, TypedDataFrame, TypedSeries)
+from purplequery.dataframe_node import QueryExpression, Select, TableReference
+from purplequery.evaluatable_node import LiteralType  # noqa: F401
+from purplequery.evaluatable_node import (Case, Cast, Exists, Extract, FunctionCall, If, InCheck,
+                                          Not, NullCheck, Selector, UnaryNegation, Value)
+from purplequery.grammar import select as select_rule
+from purplequery.grammar import query_expression
+from purplequery.query_helper import apply_rule
+from purplequery.tokenizer import tokenize
 
 
 @ddt

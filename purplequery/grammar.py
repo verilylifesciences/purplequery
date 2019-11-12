@@ -46,17 +46,17 @@ become them as they grow in complexity.
 
 from typing import List, cast  # noqa: F401
 
-from bq_abstract_syntax_tree import EMPTY_NODE, Field
-from bq_operator import binary_operator_expression_rule
-from dataframe_node import QueryExpression, Select, SetOperation, TableReference, Unnest
-from evaluatable_node import (Array, Array_agg, Case, Cast, Count, Exists, Extract, FunctionCall,
-                              If, InCheck, Not, NullCheck, Selector, StarSelector, Struct,
-                              UnaryNegation)
-from join import DataSource, FromItemType, Join
-from query_helper import AppliedRuleOutputType  # noqa: F401
-from query_helper import apply_rule, separated_sequence, wrap
-from terminals import grammar_literal, identifier, literal
-from type_grammar import array_type, scalar_type, struct_type
+from .bq_abstract_syntax_tree import EMPTY_NODE, Field
+from .bq_operator import binary_operator_expression_rule
+from .dataframe_node import QueryExpression, Select, SetOperation, TableReference, Unnest
+from .evaluatable_node import (Array, Array_agg, Case, Cast, Count, Exists, Extract, FunctionCall,
+                               If, InCheck, Not, NullCheck, Selector, StarSelector, Struct,
+                               UnaryNegation)
+from .join import DataSource, FromItemType, Join
+from .query_helper import AppliedRuleOutputType  # noqa: F401
+from .query_helper import apply_rule, separated_sequence, wrap
+from .terminals import grammar_literal, identifier, literal
+from .type_grammar import array_type, scalar_type, struct_type
 
 
 def field(tokens):

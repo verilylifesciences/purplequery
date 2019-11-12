@@ -12,15 +12,16 @@ from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, T
 
 import pandas as pd
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     DataframeNode, EvaluatableLeafNode, EvaluatableNode,
-                                     EvaluatableNodeThatAggregatesOrGroups,
-                                     EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
-                                     MarkerSyntaxTreeNode, TableContext, _EmptyNode)
-from bq_types import (BQArray, BQScalarType, BQStructType, BQType, TypedDataFrame,  # noqa: F401
-                      TypedSeries, implicitly_coerce)
 from six.moves import reduce
+
+from .binary_expression import BinaryExpression
+from .bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
+                                      DataframeNode, EvaluatableLeafNode, EvaluatableNode,
+                                      EvaluatableNodeThatAggregatesOrGroups,
+                                      EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
+                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
+from .bq_types import (BQArray, BQScalarType, BQStructType, BQType, TypedDataFrame,  # noqa: F401
+                       TypedSeries, implicitly_coerce)
 
 NoneType = type(None)
 LiteralType = Union[NoneType, bool, int, float, str, Tuple]

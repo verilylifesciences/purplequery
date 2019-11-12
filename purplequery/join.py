@@ -14,11 +14,11 @@ from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, T
 
 import pandas as pd
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     DataframeNode, EvaluatableNode, EvaluationContext, Field,
-                                     TableContext, _EmptyNode)
-from bq_types import TypedDataFrame, TypedSeries  # noqa: F401
+from .binary_expression import BinaryExpression
+from .bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
+                                      DataframeNode, EvaluatableNode, EvaluationContext, Field,
+                                      TableContext, _EmptyNode)
+from .bq_types import TypedDataFrame, TypedSeries  # noqa: F401
 
 # column name of ephemeral key added to implement a cross join with pandas merge.
 _CROSS_KEY = '__cross_key__'

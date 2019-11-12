@@ -14,7 +14,7 @@ from typing import Callable, NamedTuple, Optional
 
 import numpy as np
 
-from bq_types import BQScalarType, BQType
+from .bq_types import BQScalarType, BQType
 
 """Tuple for storing operator info.
 

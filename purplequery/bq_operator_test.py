@@ -9,12 +9,12 @@ from typing import List, Union  # noqa: F401
 
 from ddt import data, ddt, unpack
 
-from bq_abstract_syntax_tree import EvaluatableNode, EvaluationContext, TableContext
-from bq_operator import (BINARY_OPERATOR_PATTERN, _reparse_binary_expression,
-                         binary_operator_expression_rule)
-from bq_types import BQScalarType, TypedSeries
-from evaluatable_node import Value  # noqa: F401
-from terminals import literal
+from purplequery.bq_abstract_syntax_tree import EvaluatableNode, EvaluationContext, TableContext
+from purplequery.bq_operator import (BINARY_OPERATOR_PATTERN, _reparse_binary_expression,
+                                     binary_operator_expression_rule)
+from purplequery.bq_types import BQScalarType, TypedSeries
+from purplequery.evaluatable_node import Value  # noqa: F401
+from purplequery.terminals import literal
 
 
 @ddt

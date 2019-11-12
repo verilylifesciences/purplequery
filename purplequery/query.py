@@ -7,12 +7,12 @@
 
 import re
 
-from bq_abstract_syntax_tree import DatasetTableContext, DatasetType  # noqa: F401
-from bq_types import TypedDataFrame  # noqa: F401
-from dataframe_node import QueryExpression
-from grammar import query_expression
-from query_helper import apply_rule
-from tokenizer import tokenize
+from .bq_abstract_syntax_tree import DatasetTableContext, DatasetType  # noqa: F401
+from .bq_types import TypedDataFrame  # noqa: F401
+from .dataframe_node import QueryExpression
+from .grammar import query_expression
+from .query_helper import apply_rule
+from .tokenizer import tokenize
 
 
 def _simplify_query(query):

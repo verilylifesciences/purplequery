@@ -10,15 +10,16 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union  
 
 import pandas as pd
 
-from bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
-                                     AbstractSyntaxTreeNode, DataframeNode, DatasetType,
-                                     EvaluatableNode, EvaluationContext, Field,
-                                     MarkerSyntaxTreeNode, TableContext, _EmptyNode)
-from bq_types import (BQArray, BQStructType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
-                      implicitly_coerce)
-from evaluatable_node import Array, Selector, StarSelector, Value  # noqa: F401
-from join import DataSource  # noqa: F401
 from six.moves import reduce
+
+from .bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
+                                      AbstractSyntaxTreeNode, DataframeNode, DatasetType,
+                                      EvaluatableNode, EvaluationContext, Field,
+                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
+from .bq_types import (BQArray, BQStructType, BQType, TypedDataFrame, TypedSeries,  # noqa: F401
+                       implicitly_coerce)
+from .evaluatable_node import Array, Selector, StarSelector, Value  # noqa: F401
+from .join import DataSource  # noqa: F401
 
 DEFAULT_TABLE_NAME = None
 

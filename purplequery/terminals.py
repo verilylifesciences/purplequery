@@ -18,10 +18,10 @@ There are terminals of three types:
 import re
 from typing import Callable, List, Optional, Tuple  # noqa: F401
 
-from bq_types import BQScalarType
-from evaluatable_node import Value
-from patterns import (BACKTICK_PATTERN, FLOAT_LITERAL_PATTERNS, IDENTIFIER_PATTERN,
-                      INT_LITERAL_PATTERN, STR_LITERAL_PATTERNS)
+from .bq_types import BQScalarType
+from .evaluatable_node import Value
+from .patterns import (BACKTICK_PATTERN, FLOAT_LITERAL_PATTERNS, IDENTIFIER_PATTERN,
+                       INT_LITERAL_PATTERN, STR_LITERAL_PATTERNS)
 
 # Reserved words that are used in the grammar, not available as identifiers.
 # This list is from

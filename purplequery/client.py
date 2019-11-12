@@ -20,9 +20,9 @@ from google.cloud.bigquery.job import LoadJobConfig, QueryJobConfig  # noqa: F40
 from google.cloud.bigquery.schema import SchemaField  # noqa: F401
 from google.cloud.bigquery.table import TableListItem  # noqa: F401
 
-from bq_types import BQScalarType  # noqa: F401
-from bq_types import BQArray, BQType, TypedDataFrame
-from query import execute_query
+from .bq_types import BQScalarType  # noqa: F401
+from .bq_types import BQArray, BQType, TypedDataFrame
+from .query import execute_query
 
 
 class Client:

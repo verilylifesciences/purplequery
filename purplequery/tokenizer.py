@@ -8,9 +8,10 @@
 import re
 from typing import List  # noqa: F401
 
-from bq_operator import BINARY_OPERATOR_PATTERN
-from patterns import (BACKTICK_PATTERN, COMMENT_PATTERN, FLOAT_LITERAL_PATTERNS, IDENTIFIER_PATTERN,
-                      INT_LITERAL_PATTERN, NON_OPERATOR_TOKEN_PATTERN, STR_LITERAL_PATTERNS)
+from .bq_operator import BINARY_OPERATOR_PATTERN
+from .patterns import (BACKTICK_PATTERN, COMMENT_PATTERN, FLOAT_LITERAL_PATTERNS,
+                       IDENTIFIER_PATTERN, INT_LITERAL_PATTERN, NON_OPERATOR_TOKEN_PATTERN,
+                       STR_LITERAL_PATTERNS)
 
 _COMBINED_PATTERN = re.compile(
     '|'.join((

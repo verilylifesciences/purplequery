@@ -15,8 +15,9 @@ from google.cloud.bigquery import Dataset, DatasetReference, Table, TableReferen
 from google.cloud.bigquery.job import QueryJobConfig
 from google.cloud.bigquery.schema import SchemaField
 
-import client
-from bq_types import PythonType  # noqa: F401
+from purplequery.bq_types import PythonType  # noqa: F401
+from purplequery.client import _FakeJob  # noqa: F401
+from purplequery.client import Client
 from six.moves import cStringIO
 
 _TEST_SCHEMA = [SchemaField(name="num", field_type='INTEGER'),
@@ -33,11 +34,11 @@ _TEST_SCHEMA = [SchemaField(name="num", field_type='INTEGER'),
 class ClientTestBase(unittest.TestCase):
 
     def assertRowsExpected(self, query_job, expected_rows):
-        # type: (client._FakeJob, List[List[PythonType]]) -> None
+        # type: (_FakeJob, List[List[PythonType]]) -> None
         """Assert that query_job has finished and it contains the expected rows.
 
         Args:
-            query_job: A QueryJob returned from client.query
+            query_job: A QueryJob returned from query
             expected_rows: A List of lists of values
         """
         self.assertTrue(query_job.done())
@@ -49,7 +50,7 @@ class ClientTestBase(unittest.TestCase):
 class ClientTest(ClientTestBase):
 
     def setUp(self):
-        self.bq_client = client.Client('my_project')
+        self.bq_client = Client('my_project')
 
     def assertDatasetReferenceEqual(self, expected_dataset_reference, found_dataset_reference):
         # type: (DatasetReference, DatasetReference) -> None
@@ -248,7 +249,7 @@ class ClientTest(ClientTestBase):
 class ClientWriteFromQueryTest(ClientTestBase):
 
     def setUp(self):
-        self.bq_client = client.Client('my_project')
+        self.bq_client = Client('my_project')
         dataset_ref = DatasetReference('my_project', 'my_dataset')
         schema = [SchemaField(name="a", field_type='INT64'),
                   SchemaField(name="b", field_type='FLOAT64'),

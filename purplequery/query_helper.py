@@ -32,9 +32,9 @@ allowing construction of an object from the rule's output.
 
 from typing import Any, Callable, List, Optional, Tuple, Union  # noqa: F401
 
-from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     AppliedRuleNode, AppliedRuleOutputType, RuleType)
-from terminals import grammar_literal
+from .bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
+                                      AppliedRuleNode, AppliedRuleOutputType, RuleType)
+from .terminals import grammar_literal
 
 
 def separated_sequence(rule,  # RuleType

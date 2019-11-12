@@ -8,14 +8,16 @@ from typing import List, Tuple, Union  # noqa: F401
 
 from ddt import data, ddt, unpack
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import EMPTY_NODE, EvaluatableNode, Field, _EmptyNode  # noqa: F401
-from bq_types import BQScalarType
-from dataframe_node import DataSource, QueryExpression, Select, TableReference
-from evaluatable_node import (Case, Cast, Count, Exists, Extract, If, InCheck, Not, NullCheck,
-                              Selector, StarSelector, UnaryNegation, Value,
-                              _AggregatingFunctionCall)
-from grammar import core_expression, data_source, post_expression, query_expression, select
+from purplequery.binary_expression import BinaryExpression
+from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, EvaluatableNode, Field,  # noqa: F401
+                                                 _EmptyNode)
+from purplequery.bq_types import BQScalarType
+from purplequery.dataframe_node import DataSource, QueryExpression, Select, TableReference
+from purplequery.evaluatable_node import (Case, Cast, Count, Exists, Extract, If, InCheck, Not,
+                                          NullCheck, Selector, StarSelector, UnaryNegation, Value,
+                                          _AggregatingFunctionCall)
+from purplequery.grammar import (core_expression, data_source, post_expression, query_expression,
+                                 select)
 
 
 @ddt
