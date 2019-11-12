@@ -10,10 +10,11 @@ from typing import Any  # noqa: F401
 import pandas as pd
 from ddt import data, ddt, unpack
 
-import query
-from bq_abstract_syntax_tree import EMPTY_CONTEXT, EvaluatableNode
-from bq_types import BQScalarType, TypedDataFrame, TypedSeries
-from grammar import expression as expression_rule
+from purplequery.bq_abstract_syntax_tree import EMPTY_CONTEXT, EvaluatableNode
+from purplequery.bq_types import BQScalarType, TypedDataFrame, TypedSeries
+from purplequery.grammar import expression as expression_rule
+from purplequery.query import _simplify_query, apply_rule, execute_query
+from purplequery.tokenizer import tokenize
 
 
 @ddt
@@ -127,9 +128,9 @@ class QueryTest(unittest.TestCase):
     @unpack
     def test_scalar_expressions(self, expression, expected_result):
         # type: (str, Any) -> None
-        tokens = query.tokenize(expression)
+        tokens = tokenize(expression)
 
-        ast, leftover = query.apply_rule(expression_rule, tokens)
+        ast, leftover = apply_rule(expression_rule, tokens)
         self.assertFalse(leftover, 'leftover {}'.format(leftover))
 
         assert isinstance(ast, EvaluatableNode)
@@ -250,7 +251,7 @@ class QueryTest(unittest.TestCase):
     )
     @unpack
     def test_scalar_selects(self, sql_query, expected_result):
-        result = query.execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets)
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     @data(('',
@@ -289,7 +290,7 @@ class QueryTest(unittest.TestCase):
         sql_query = (
             ('select lefty.a, righty.a, b, c from `my_project.my_dataset.lefty`'
              '{} join `my_project.my_dataset.righty` on lefty.a=righty.a').format(join_type))
-        result = query.execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets)
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     @data(
@@ -315,7 +316,7 @@ class QueryTest(unittest.TestCase):
         sql_query = (
             ('select lefty.a,righty.a,b,c from `my_project.my_dataset.lefty`'
              'full outer join `my_project.my_dataset.righty` {}').format(condition))
-        result = query.execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets)
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     def test_leftover_error(self):
@@ -327,7 +328,7 @@ class QueryTest(unittest.TestCase):
             "simplified query 'a b c'\n"
             "raw query 'a b c'")
         with self.assertRaisesRegexp(RuntimeError, expected_error):
-            query.execute_query(sql_query, self.datasets)
+            execute_query(sql_query, self.datasets)
 
     def test_query_error(self):
         '''Issue a query with insufficient context, to trigger general Exception catch'''
@@ -336,14 +337,14 @@ class QueryTest(unittest.TestCase):
         expected_error = (r"Attempt to look up path \('SomeTable',\) "
                           r"with no projects/datasets/tables given")
         with self.assertRaisesRegexp(ValueError, expected_error):
-            query.execute_query(sql_query, {})
+            execute_query(sql_query, {})
 
     def test_simplify_query(self):
         '''Test cleaning up comments and extra whitespace'''
 
         sql_query = 'SELECT     *\n FROM --Get everything from the table\nSomeTable'
         simplified_query = 'SELECT * FROM SomeTable'
-        self.assertEqual(query._simplify_query(sql_query), simplified_query)
+        self.assertEqual(_simplify_query(sql_query), simplified_query)
 
     def test_group_by_error(self):
         '''Test that selecting a varying non-group-by-key raises an error'''
@@ -351,7 +352,7 @@ class QueryTest(unittest.TestCase):
         sql_query = 'SELECT d FROM `my_project.my_dataset.table2` GROUP BY a'
 
         with self.assertRaisesRegexp(ValueError, "not aggregated or grouped by"):
-            query.execute_query(sql_query, self.datasets)
+            execute_query(sql_query, self.datasets)
 
 
 if __name__ == '__main__':

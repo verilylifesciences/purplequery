@@ -2,23 +2,6 @@ package(default_visibility = ["//visibility:public"])
 
 load(":pytest.bzl", "py2and3_test")
 
-# This magic incantation creates a target that picks the python interpreter based on the
-# python_version parameter (which you'd think bazel would do automatically, but no).
-#
-# See https://github.com/bazelbuild/bazel/issues/4815#issuecomment-460777113
-#
-# Note that you need to run and pass the flag --python_top=//verily_submodule/py/fake_bq:myruntime
-# for this to do anything, as of bazel 0.23.2.
-py_runtime(
-    name = "myruntime",
-    files = [],
-    interpreter_path = select({
-        # Update paths as appropriate for your system.
-        "@bazel_tools//tools/python:PY2": "/usr/bin/python2",
-        "@bazel_tools//tools/python:PY3": "/usr/bin/python3",
-    }),
-)
-
 py_library(
     name = "client",
     srcs = ["client.py"],
@@ -106,7 +89,9 @@ py2and3_test(
         ":bq_types",
         ":dataframe_node",
         ":evaluatable_node",
+        ":grammar",
         ":join",
+        ":tokenizer",
     ],
 )
 
@@ -129,7 +114,9 @@ py2and3_test(
         ":bq_types",
         ":dataframe_node",
         ":evaluatable_node",
+        ":grammar",
         ":join",
+        ":tokenizer",
     ],
 )
 
@@ -196,6 +183,7 @@ py_library(
         ":join",
         ":query_helper",
         ":terminals",
+        ":type_grammar",
     ],
 )
 
@@ -299,11 +287,18 @@ py_library(
     name = "type_grammar",
     srcs = ["type_grammar.py"],
     deps = [
+        ":bq_abstract_syntax_tree",
+        ":bq_types",
+        ":query_helper",
+        ":terminals",
     ],
 )
 
 py2and3_test(
     name = "type_grammar_test",
     srcs = ["type_grammar_test.py"],
-    deps = [":type_grammar"],
+    deps = [
+        ":tokenizer",
+        ":type_grammar",
+    ],
 )

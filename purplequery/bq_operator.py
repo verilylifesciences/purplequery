@@ -18,11 +18,11 @@ returns an abstract syntax tree node that evaluates the corresponding expression
 import re
 from typing import Callable, List, NamedTuple, Optional, Union, cast  # noqa: F401
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (AppliedRuleOutputType, EvaluatableNode,  # noqa: F401
-                                     EvaluationContext, RuleType)
-from bq_binary_operators import BINARY_OPERATOR_INFO
-from query_helper import separated_sequence
+from .binary_expression import BinaryExpression
+from .bq_abstract_syntax_tree import (AppliedRuleOutputType, EvaluatableNode,  # noqa: F401
+                                      EvaluationContext, RuleType)
+from .bq_binary_operators import BINARY_OPERATOR_INFO
+from .query_helper import separated_sequence
 
 # This pattern is used by the tokenizer to recognize operators named by punctuation.
 # We start with the longest first so that matching < doesn't preclude matching << or <=.

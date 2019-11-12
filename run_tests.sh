@@ -28,20 +28,20 @@ for version in 2 3; do
   pip$version install "git+https://github.com/verilylifesciences/analysis-py-utils@11b06535c4d3973670d5b23ae3846f3601f00a1a"
   pip$version install .
 
-  python$version -m bq_abstract_syntax_tree_test
-  python$version -m bq_client_test
-  python$version -m bq_operator_test
-  python$version -m bq_types_test
-  python$version -m client_test
-  python$version -m dataframe_node_test
-  python$version -m evaluatable_node_test
-  python$version -m grammar_test
-  python$version -m join_test
-  python$version -m query_helper_test
-  python$version -m query_test
-  python$version -m terminals_test
-  python$version -m tokenizer_test
-  python$version -m type_grammar_test
+  python$version -m purplequery.bq_abstract_syntax_tree_test
+  python$version -m purplequery.bq_client_test
+  python$version -m purplequery.bq_operator_test
+  python$version -m purplequery.bq_types_test
+  python$version -m purplequery.client_test
+  python$version -m purplequery.dataframe_node_test
+  python$version -m purplequery.evaluatable_node_test
+  python$version -m purplequery.grammar_test
+  python$version -m purplequery.join_test
+  python$version -m purplequery.query_helper_test
+  python$version -m purplequery.query_test
+  python$version -m purplequery.terminals_test
+  python$version -m purplequery.tokenizer_test
+  python$version -m purplequery.type_grammar_test
 
   deactivate
 done

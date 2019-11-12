@@ -9,16 +9,16 @@ from typing import Any, List, Tuple  # noqa: F401
 import pandas as pd
 from ddt import data, ddt, unpack
 
-from binary_expression import BinaryExpression
-from bq_abstract_syntax_tree import (EMPTY_NODE, DatasetTableContext, EvaluatableNode,  # noqa: F401
-                                     Field, TableContext)
-from bq_types import BQScalarType, TypedDataFrame
-from dataframe_node import QueryExpression, Select, TableReference
-from evaluatable_node import Selector, StarSelector, Value
-from grammar import query_expression as query_expression_rule
-from grammar import select as select_rule
-from join import DataSource
-from tokenizer import tokenize
+from purplequery.binary_expression import BinaryExpression
+from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, DatasetTableContext,  # noqa: F401
+                                                 EvaluatableNode, Field, TableContext)
+from purplequery.bq_types import BQScalarType, TypedDataFrame
+from purplequery.dataframe_node import QueryExpression, Select, TableReference
+from purplequery.evaluatable_node import Selector, StarSelector, Value
+from purplequery.grammar import query_expression as query_expression_rule
+from purplequery.grammar import select as select_rule
+from purplequery.join import DataSource
+from purplequery.tokenizer import tokenize
 
 
 @ddt

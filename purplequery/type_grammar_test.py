@@ -2,9 +2,9 @@ import unittest
 
 from ddt import data, ddt, unpack
 
-from bq_types import BQArray, BQScalarType, BQStructType
-from tokenizer import tokenize
-from type_grammar import array_type, scalar_type, struct_type
+from purplequery.bq_types import BQArray, BQScalarType, BQStructType
+from purplequery.tokenizer import tokenize
+from purplequery.type_grammar import array_type, scalar_type, struct_type
 
 
 @ddt

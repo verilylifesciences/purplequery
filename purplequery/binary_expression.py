@@ -11,10 +11,10 @@ Tested in bq_operator_test.py
 
 from typing import List, Sequence  # noqa: F401
 
-from bq_abstract_syntax_tree import (EvaluatableNode, EvaluatableNodeWithChildren,  # noqa: F401
-                                     EvaluationContext)
-from bq_binary_operators import BINARY_OPERATOR_INFO
-from bq_types import TypedSeries, implicitly_coerce
+from .bq_abstract_syntax_tree import (EvaluatableNode, EvaluatableNodeWithChildren,  # noqa: F401
+                                      EvaluationContext)
+from .bq_binary_operators import BINARY_OPERATOR_INFO
+from .bq_types import TypedSeries, implicitly_coerce
 
 
 class BinaryExpression(EvaluatableNodeWithChildren):

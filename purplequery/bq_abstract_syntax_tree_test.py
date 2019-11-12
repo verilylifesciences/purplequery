@@ -9,11 +9,11 @@ from typing import List, Tuple, Type, Union  # noqa: F401
 import pandas as pd
 from ddt import data, ddt, unpack
 
-from bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                     DatasetTableContext, EvaluationContext, TableContext,
-                                     _EmptyNode)
-from bq_types import BQScalarType, TypedDataFrame
-from dataframe_node import TableReference
+from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
+                                                 DatasetTableContext, EvaluationContext,
+                                                 TableContext, _EmptyNode)
+from purplequery.bq_types import BQScalarType, TypedDataFrame
+from purplequery.dataframe_node import TableReference
 
 
 @ddt

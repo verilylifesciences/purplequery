@@ -12,9 +12,9 @@ import pandas as pd
 from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
 
-from bq_types import PythonType  # noqa: F401
-from bq_types import (BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries, _coerce_names,
-                      implicitly_coerce)
+from purplequery.bq_types import PythonType  # noqa: F401
+from purplequery.bq_types import (BQArray, BQScalarType, BQType, TypedDataFrame, TypedSeries,
+                                  _coerce_names, implicitly_coerce)
 
 # The NumPy types that are used to read in data into Pandas.
 NumPyType = Union[np.bool_, np.datetime64, np.float64, np.string_]

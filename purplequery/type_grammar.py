@@ -2,11 +2,11 @@
 
 from typing import List, Sequence, Tuple, Union  # noqa: F401
 
-from bq_abstract_syntax_tree import AppliedRuleOutputType  # noqa: F401
-from bq_types import BQType  # noqa: F401
-from bq_types import BQArray, BQScalarType, BQStructType
-from query_helper import apply_rule, separated_sequence, wrap
-from terminals import identifier
+from .bq_abstract_syntax_tree import AppliedRuleOutputType  # noqa: F401
+from .bq_types import BQType  # noqa: F401
+from .bq_types import BQArray, BQScalarType, BQStructType
+from .query_helper import apply_rule, separated_sequence, wrap
+from .terminals import identifier
 
 
 def bigquery_type(tokens):

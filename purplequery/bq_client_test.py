@@ -7,7 +7,7 @@ import unittest
 
 from verily.bigquery_wrapper import bq_shared_tests
 
-from client import Client as FakeClient
+from purplequery.client import Client as FakeClient
 
 
 class BQClientTest(bq_shared_tests.BQSharedTests):

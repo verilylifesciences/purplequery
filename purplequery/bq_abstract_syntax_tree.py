@@ -13,7 +13,7 @@ from typing import (Any, Callable, Dict, List, NamedTuple, Optional, Sequence, S
 import pandas as pd
 import six
 
-from bq_types import BQScalarType, BQType, TypedDataFrame, TypedSeries  # noqa: F401
+from .bq_types import BQScalarType, BQType, TypedDataFrame, TypedSeries  # noqa: F401
 
 NoneType = type(None)
 DatasetType = Dict[str, Dict[str, Dict[str, TypedDataFrame]]]
