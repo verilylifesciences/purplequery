@@ -26,6 +26,8 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
 | | SetOperation                           # A combination of two query expressions by a set operation such as UNION ALL
 |  \
 |   TableReference                         # A reference to a table: [[project.]dataset.]table
+|  \
+|   Unnest                                 # An UNNEST(array-expression)
  \
   EvaluatableNode                          # Abstract: a node that can be evaluated; an expression
   |\

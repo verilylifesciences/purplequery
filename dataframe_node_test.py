@@ -4,14 +4,14 @@
 # license that can be found in the LICENSE file.
 
 import unittest
-from typing import List, Tuple  # noqa: F401
+from typing import Any, List, Tuple  # noqa: F401
 
 import pandas as pd
 from ddt import data, ddt, unpack
 
 from binary_expression import BinaryExpression
 from bq_abstract_syntax_tree import (EMPTY_NODE, DatasetTableContext, EvaluatableNode,  # noqa: F401
-                                     Field)
+                                     Field, TableContext)
 from bq_types import BQScalarType, TypedDataFrame
 from dataframe_node import QueryExpression, Select, TableReference
 from evaluatable_node import Selector, StarSelector, Value
@@ -403,6 +403,45 @@ class DataframeNodeTest(unittest.TestCase):
             "datasets \\['dataset1', 'dataset2'\\]"
         with self.assertRaisesRegexp(ValueError, expected_error):
             table_ref.get_dataframe(new_table_context)
+
+    @data(
+          dict(query='SELECT * from UNNEST([])',
+               result=[]),
+          dict(query='SELECT * from UNNEST([1, 2, 3])',
+               result=[[1], [2], [3]]),
+          dict(query='SELECT * from UNNEST(["a", "b", "c"])',
+               result=[['a'], ['b'], ['c']]),
+          dict(query='SELECT * from UNNEST([(1, "a"), (2, "b")])',
+               result=[[1, 'a'], [2, 'b']]),
+          dict(query='SELECT x, y from UNNEST([STRUCT<x INTEGER, y STRING>(1, "a"), (2, "b")])',
+               result=[[1, 'a'], [2, 'b']]),
+    )
+    @unpack
+    def test_unnest(self, query, result):
+        # type: (str, List[List[Any]]) -> None
+        node, leftover = query_expression_rule(tokenize(query))
+
+        self.assertFalse(leftover)
+        assert isinstance(node, QueryExpression)
+
+        dataframe, _ = node.get_dataframe(TableContext())
+
+        self.assertEqual(dataframe.to_list_of_lists(), result)
+
+    @data(
+          dict(query='SELECT * from UNNEST([1, "a"])',
+               expected_error='Cannot implicitly coerce the given types'),
+    )
+    @unpack
+    def test_unnest_error(self, query, expected_error):
+        # type: (str, str) -> None
+        node, leftover = query_expression_rule(tokenize(query))
+
+        self.assertFalse(leftover)
+        assert isinstance(node, QueryExpression)
+
+        with self.assertRaisesRegexp(ValueError, expected_error):
+            node.get_dataframe(TableContext())
 
 
 if __name__ == '__main__':
