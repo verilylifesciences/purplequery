@@ -63,8 +63,10 @@ class DataframeNodeTest(unittest.TestCase):
         self.assertEqual(dataframe.to_list_of_lists(), [[2]])
 
     @data(
-        dict(query_expression='select a as d from my_table union all select c as d from my_table',
+        dict(query_expression='select a as d from my_table union all select c from my_table',
              expected_result=[[1], [3]]),
+        dict(query_expression='select * from my_table union all select 4, 5, 6',
+             expected_result=[[1, 2, 3], [4, 5, 6]]),
         dict(query_expression='select 1 union all select 2.0',
              expected_result=[[1.0], [2.0]]),
     )
