@@ -42,6 +42,8 @@ class _WithTableContext(TableContext):
 
         if len(path) == 1 and path[0] == self.name:
             return self.table, self.name
+        if '.'.join(path) == self.name:
+            return self.table, path[-1]
         return self.parent_context.lookup(path)
 
 
@@ -186,14 +188,18 @@ class SetOperation(DataframeNode):
         num_left_columns = len(left_dataframe.types)
         num_right_columns = len(right_dataframe.types)
         if num_left_columns != num_right_columns:
-            raise ValueError("Queries in UNION ALL have mismatched column count: {} vs {}"
-                             .format(num_left_columns, num_right_columns))
+            raise ValueError("Queries in {} ALL have mismatched column count: {} vs {}"
+                             .format(self.set_operator, num_left_columns, num_right_columns))
         combined_types = [implicitly_coerce(left_type, right_type)
                           for left_type, right_type in zip(left_dataframe.types,
                                                            right_dataframe.types)]
         if self.set_operator == 'UNION_ALL':
             return TypedDataFrame(
-                pd.concat([left_dataframe.dataframe, right_dataframe.dataframe]),
+                pd.concat([left_dataframe.dataframe,
+                           # Rename second table to use first table's column names
+                           right_dataframe.dataframe.rename(
+                               columns=dict(zip(right_dataframe.dataframe.columns,
+                                                left_dataframe.dataframe.columns)))]),
                 combined_types), DEFAULT_TABLE_NAME
         else:
             raise NotImplementedError("set operation {} not implemented".format(self.set_operator))
