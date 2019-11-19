@@ -45,7 +45,7 @@ class DataframeNodeTest(unittest.TestCase):
 
         self.assertEqual(table_name, None)
         self.assertEqual(dataframe.to_list_of_lists(), [[1], [2], [3]])
-        self.assertEqual(list(dataframe.dataframe), ['my_table.a'])
+        self.assertEqual(list(dataframe.dataframe), ['a'])
         self.assertEqual(dataframe.types, [BQScalarType.INTEGER])
 
     def test_query_expression_limit(self):
@@ -223,7 +223,7 @@ class DataframeNodeTest(unittest.TestCase):
 
         self.assertEqual(table_name, None)
         self.assertEqual(dataframe.to_list_of_lists(), [[1], [2], [3]])
-        self.assertEqual(list(dataframe.dataframe), ['my_table.a'])
+        self.assertEqual(list(dataframe.dataframe), ['a'])
         self.assertEqual(dataframe.types, [BQScalarType.INTEGER])
 
     @data(
@@ -361,6 +361,40 @@ class DataframeNodeTest(unittest.TestCase):
         self.assertFalse(leftover)
         self.assertEqual(dataframe.to_list_of_lists(), expected_result)
 
+    @data(
+        dict(select='SELECT * EXCEPT (a) FROM table1',
+             expected_result=[[8, 4], [3, 0], [10, 1]]),
+        dict(select='SELECT * EXCEPT (a, c) FROM table1',
+             expected_result=[[8], [3], [10]]),
+        dict(select='SELECT * REPLACE (a/2 as a) FROM table1',
+             expected_result=[[1, 8, 4], [3, 3, 0], [6, 10, 1]]),
+        dict(select='SELECT table1.*, d FROM table1 JOIN table2 USING (a)',
+             expected_result=[[2, 8, 4, 7], [6, 3, 0, 2], [12, 10, 1, 9]]),
+    )
+    @unpack
+    def test_select_star(self, select, expected_result):
+        # type: (str, List[List[int]]) -> None
+        group_table_context = DatasetTableContext(
+            {'p':
+             {'d':
+              {'table1': TypedDataFrame(
+                  pd.DataFrame(
+                      [[2, 8, 4], [6, 3, 0], [12, 10, 1]],
+                      columns=['a', 'b', 'c']),
+                  types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]),
+               'table2': TypedDataFrame(
+                  pd.DataFrame(
+                      [[2, 7, 3], [6, 2, -1], [12, 9, 0]],
+                      columns=['a', 'd', 'e']),
+                  types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER]),
+               }}})
+
+        select_node, leftover = select_rule(tokenize(select))
+        assert isinstance(select_node, Select)
+        dataframe, unused_table_name = select_node.get_dataframe(group_table_context)
+        self.assertFalse(leftover)
+        self.assertEqual(dataframe.to_list_of_lists(), expected_result)
+
     @data((('my_project', 'my_dataset', 'my_table'),),
           (('my_dataset', 'my_table'),),
           (('my_table',),),
@@ -408,19 +442,25 @@ class DataframeNodeTest(unittest.TestCase):
 
     @data(
           dict(query='SELECT * from UNNEST([])',
-               result=[]),
+               result=[],
+               # UNNEST always returns one column unless the result is a struct.
+               result_columns=['f0_']),
           dict(query='SELECT * from UNNEST([1, 2, 3])',
-               result=[[1], [2], [3]]),
+               result=[[1], [2], [3]],
+               result_columns=['f0_']),
           dict(query='SELECT * from UNNEST(["a", "b", "c"])',
-               result=[['a'], ['b'], ['c']]),
+               result=[['a'], ['b'], ['c']],
+               result_columns=['f0_']),
           dict(query='SELECT * from UNNEST([(1, "a"), (2, "b")])',
-               result=[[1, 'a'], [2, 'b']]),
+               result=[[1, 'a'], [2, 'b']],
+               result_columns=['f0_', 'f1_']),
           dict(query='SELECT x, y from UNNEST([STRUCT<x INTEGER, y STRING>(1, "a"), (2, "b")])',
-               result=[[1, 'a'], [2, 'b']]),
+               result=[[1, 'a'], [2, 'b']],
+               result_columns=['x', 'y']),
     )
     @unpack
-    def test_unnest(self, query, result):
-        # type: (str, List[List[Any]]) -> None
+    def test_unnest(self, query, result, result_columns):
+        # type: (str, List[List[Any]], List[str]) -> None
         node, leftover = query_expression_rule(tokenize(query))
 
         self.assertFalse(leftover)
@@ -429,6 +469,7 @@ class DataframeNodeTest(unittest.TestCase):
         dataframe, _ = node.get_dataframe(TableContext())
 
         self.assertEqual(dataframe.to_list_of_lists(), result)
+        self.assertEqual(list(dataframe.dataframe.columns), result_columns)
 
     @data(
           dict(query='SELECT * from UNNEST([1, "a"])',

@@ -342,10 +342,14 @@ def select(tokens):
                       '*',
 
                       # exception
-                      None,
+                      [('EXCEPT', '(', separated_sequence(identifier, ','), ')'), None],
 
                       # replacement
-                      None
+                      [('REPLACE',
+                        '(',
+                        separated_sequence((expression, ['AS', None], identifier), ','),
+                        ')'),
+                       None],
                   ),
 
                   # The selector does not include a * and therefore cannot have
