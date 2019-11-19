@@ -573,6 +573,9 @@ class EvaluationContext:
         # Mapping of column IDs to list of table IDs to which they belong
         self.column_to_table_ids = collections.defaultdict(list)  # type: Dict[str, List[str]]
 
+        # Mapping of table IDs to list of column IDs in that table
+        self.table_to_column_ids = collections.defaultdict(list)  # type: Dict[str, List[str]]
+
         # All the available datasets (not necessarily all present in this context, yet)
         self.table_context = table_context
 
@@ -724,10 +727,11 @@ class EvaluationContext:
         elif not table_id:
             table_id = '__join{}'.format(len(self.table_ids))
 
-        # Save mapping of column ID to table IDs
+        # Save mapping of column ID <-> table IDs
         for column in table.dataframe.columns:
             column_name = column.split('.')[-1]
             self.column_to_table_ids[column_name].append(table_id)
+            self.table_to_column_ids[table_id].append(column_name)
 
         self.table_ids.add(table_id)
 

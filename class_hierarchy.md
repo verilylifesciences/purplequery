@@ -17,6 +17,8 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
 |\
 | DataSource                               # Represents what comes after FROM; all tables JOINed
 |\
+  StarSelector                             # The * in SELECT * [EXCEPT] [REPLACE]
+|\
 | DataFrameNode                            # Base class of nodes that compute a whole table
 | |\
 | | QueryExpression                        # Outermost SQL statement; WITH ... ORDER BY ...  LIMIT ...
@@ -36,8 +38,6 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
   | | Field                                # A reference to a single column; table.a
   | |\
   | | Value                                # A literal constant; 3.4 or 5 or "hello"
-  | |\
-  | | StarSelector                         # The * in SELECT *
   |  \
   |   Exists                               # EXISTS (SELECT ...)
   |\

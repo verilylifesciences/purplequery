@@ -18,8 +18,8 @@ from .binary_expression import BinaryExpression
 from .bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
                                       DataframeNode, EvaluatableLeafNode, EvaluatableNode,
                                       EvaluatableNodeThatAggregatesOrGroups,
-                                      EvaluatableNodeWithChildren, EvaluationContext, GroupedBy,
-                                      MarkerSyntaxTreeNode, TableContext, _EmptyNode)
+                                      EvaluatableNodeWithChildren, EvaluationContext, Field,
+                                      GroupedBy, MarkerSyntaxTreeNode, TableContext, _EmptyNode)
 from .bq_types import (BQArray, BQScalarType, BQStructType, BQType, TypedDataFrame,  # noqa: F401
                        TypedSeries, implicitly_coerce)
 
@@ -404,7 +404,7 @@ class NullCheck(EvaluatableNodeWithChildren):
             return TypedSeries(value.notnull(), BQScalarType.BOOLEAN)
 
 
-class StarSelector(EvaluatableLeafNode):
+class StarSelector(AbstractSyntaxTreeNode):
     '''Corresponds a wildcard field of SELECT, like SELECT * or SELECT table.*'''
 
     StarSelectorType = Tuple[AbstractSyntaxTreeNode,  # expression
@@ -413,9 +413,9 @@ class StarSelector(EvaluatableLeafNode):
                              ]
 
     def __init__(self,
-                 expression,  # type: AbstractSyntaxTreeNode
-                 exception,  # type: AbstractSyntaxTreeNode
-                 replacement,  # type: AbstractSyntaxTreeNode
+                 expression,  # type: Union[_EmptyNode, EvaluatableNode]
+                 exception,  # type: Union[_EmptyNode, Tuple[str, ...]]
+                 replacement,  # type: Union[_EmptyNode, Tuple[Tuple[EvaluatableNode, Any, str], ...]]  # noqa: E501
                  ):
         # type: (...) -> None
         '''Sets up StarSelector node
@@ -432,26 +432,39 @@ class StarSelector(EvaluatableLeafNode):
         # This field will be populated by the Select object this Selector is passed to.
         self.position = None  # type: Optional[int]
 
-    def name(self):
-        # type: () -> str
-        # It doesn't make sense to apply the .name() method to a select * or select table.*;
-        # the point of .name is to return the name of a single column, but those constructions
-        # return multiple columns.  Therefore it's an error to request the name of a select *.
-        raise ValueError("select * doesn't have a name.")
-
-    def mark_grouped_by(self, group_by_paths, context):
-        # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
-        raise ValueError("Can't evaluate select * in a group by context.")
-
-    def _evaluate_leaf_node(self, context):
-        # type: (EvaluationContext) -> TypedDataFrame
+    def get_selectors(self, context):
+        # type: (EvaluationContext) -> List[Selector]
         '''See parent, EvaluatableNode'''
+        # First: get the list of selectors, ignoring exception and replacement.
 
-        if (self.expression is EMPTY_NODE and self.exception is EMPTY_NODE
-                and self.replacement is EMPTY_NODE):
-            # Bare SELECT *
-            return context.table
-        raise NotImplementedError("SELECT expression.* not implemented")
+        # Case 1: SELECT *
+        if isinstance(self.expression, _EmptyNode):
+            selectors = [Selector(Field(path), path[-1])
+                         for col in context.table.dataframe.columns
+                         for path in (col.split('.'),)]
+
+        # Case 2: SELECT table.*
+        elif isinstance(self.expression, Field) and len(self.expression.path) == 1:
+            table_identifier, = self.expression.path
+            columns = context.table_to_column_ids[table_identifier]
+            selectors = [Selector(Field((table_identifier, column)), column) for column in columns]
+
+        # CASE 3: SELECT struct-expression.* (currently unimplemented)
+        # This 'else' would also also match nonsense like SELECT 123.*
+        else:
+            # TODO: Implement select (struct expression).*
+            raise ValueError("Cannot select {}.*".format(self.expression))
+
+        if not isinstance(self.exception, _EmptyNode):
+            selectors = [selector for selector in selectors if selector.alias not in self.exception]
+        if not isinstance(self.replacement, _EmptyNode):
+            replacement_map = {name: expression for expression, _, name in self.replacement}
+            selectors = [selector
+                         if (not isinstance(selector.alias, str)
+                             or selector.alias not in replacement_map)
+                         else Selector(replacement_map[selector.alias], selector.alias)
+                         for selector in selectors]
+        return selectors
 
 
 class Selector(EvaluatableNodeWithChildren):

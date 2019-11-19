@@ -5,6 +5,7 @@
 
 '''All subclasses of DataframeNode'''
 
+import itertools
 import operator
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union  # noqa: F401
 
@@ -272,7 +273,10 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
                     # i.e. we have to subtract one from the user-specified value to get the index.
                     # We construct a one-element field path just as if they'd specified the name
                     # of the corresponding field.
-                    grouper_path = (self.fields[grouper.value - 1].name(),)
+                    nth_field = self.fields[grouper.value - 1]
+                    if not isinstance(nth_field, Selector):
+                        raise ValueError('cannot GROUP BY {}th selector'.format(grouper.value))
+                    grouper_path = (nth_field.name(),)
                     self.group_by.append(Field(grouper_path))
                 else:
                     self.group_by.append(grouper)
@@ -300,6 +304,12 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         if outer_context:
             context.add_subcontext(outer_context)
 
+        # Expand out any * fields so that we have a list just of selectors.
+        expanded_fields = list(itertools.chain(*[
+            [selector] if isinstance(selector, Selector)
+            else selector.get_selectors(context)
+            for selector in self.fields]))
+
         context.selector_names = [
                 selector.name() for selector in self.fields if isinstance(selector, Selector)]
 
@@ -314,9 +324,9 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
 
         if not isinstance(self.group_by, _EmptyNode):
             fields_for_evaluation = context.do_group_by(
-                self.fields, self.group_by)  # type: Sequence[EvaluatableNode]
+                expanded_fields, self.group_by)  # type: Sequence[EvaluatableNode]
         else:
-            fields_for_evaluation = self.fields
+            fields_for_evaluation = expanded_fields
         result = _evaluate_fields_as_dataframe(fields_for_evaluation, context)
 
         if not isinstance(self.having, _EmptyNode):
@@ -388,11 +398,18 @@ class Unnest(DataframeNode, MarkerSyntaxTreeNode):
             raise ValueError("UNNEST({}) resulted in {!r} rather than an array"
                              .format(self.array_node, result_array))
         if isinstance(contained_type, BQStructType):
+            i = 0
+            columns = []
+            for field in contained_type.fields:
+                if field:
+                    columns.append(field)
+                else:
+                    columns.append('f{}_'.format(i))
+                    i += 1
             result_dataframe = TypedDataFrame(
-                pd.DataFrame([[cell for cell in row] for row in result_array],
-                             columns=[field if field else '' for field in contained_type.fields]),
+                pd.DataFrame([[cell for cell in row] for row in result_array], columns=columns),
                 contained_type.types)
         else:
             result_dataframe = TypedDataFrame(
-                pd.DataFrame([[cell] for cell in result_array], columns=['']), [contained_type])
+                pd.DataFrame([[cell] for cell in result_array], columns=['f0_']), [contained_type])
         return result_dataframe, None
