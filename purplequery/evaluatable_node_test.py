@@ -66,7 +66,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         typed_series = selector.evaluate(context)
         assert isinstance(typed_series, TypedSeries)
 
-        self.assertEqual(list(typed_series.series), [[1], [2]])
+        self.assertEqual(list(typed_series.series), [1, 2])
         self.assertEqual(list(typed_series.dataframe), ['field_alias'])
         self.assertEqual(typed_series.types, [BQScalarType.INTEGER])
 
@@ -125,7 +125,7 @@ class EvaluatableNodeTest(unittest.TestCase):
                                     EMPTY_NODE)
         typed_series = field.evaluate(context)
         assert isinstance(typed_series, TypedSeries)
-        self.assertEqual(list(typed_series.series), [[1], [2]])
+        self.assertEqual(list(typed_series.series), [1, 2])
         self.assertEqual(typed_series.series.name, 'a')
 
     @data(
@@ -820,7 +820,7 @@ class EvaluatableNodeTest(unittest.TestCase):
         dict(
             value=Value("abc", BQScalarType.STRING),
             cast_type=BQScalarType.TIMESTAMP,
-            error="Error parsing datetime string \"abc\" at position 0"
+            error="abc",
         ),
     )
     @unpack

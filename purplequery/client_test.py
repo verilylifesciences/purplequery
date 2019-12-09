@@ -190,7 +190,9 @@ class ClientTest(ClientTestBase):
                     (999, 23))  # type: Tuple[PythonType, ...]
 
     # Set column_to_null to each column in turn, then None (no null columns)
-    @data(*([[i] for i in range(len(INPUT_ROW))] + [[None]]))
+    @data(*([[i] for i in range(len(_TEST_SCHEMA))
+             # In recent version of Pandas, boolean types can't be N/A.
+             if _TEST_SCHEMA[i].field_type != 'BOOLEAN'] + [[None]]))
     @unpack
     def test_load_table_from_file(self, column_to_null):
         # type: (int) -> None
