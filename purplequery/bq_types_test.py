@@ -51,14 +51,32 @@ class BqTypesTest(unittest.TestCase):
 
     @data(
         (BQScalarType.BOOLEAN, SchemaField(name='foo', field_type='BOOL')),
-        (BQScalarType.INTEGER, SchemaField(name='foo', field_type='INTEGER')),
-        (BQScalarType.FLOAT, SchemaField(name='foo', field_type='FLOAT')),
+        (BQScalarType.INTEGER, SchemaField(name='foo', field_type='INT64')),
+        (BQScalarType.FLOAT, SchemaField(name='foo', field_type='FLOAT64')),
     )
     @unpack
-    def test_convert_from_legacy_schema_field_to_bq_type(self, bq_type, schema_field):
+    def test_convert_from_standard_schema_field_to_bq_type(self, bq_type, schema_field):
         # type: (BQScalarType, SchemaField) -> None
 
         self.assertEqual(BQType.from_schema_field(schema_field), bq_type)
+
+    @data(
+        (BQScalarType.BOOLEAN, 'BOOL'),
+        (BQScalarType.INTEGER, 'int64'),
+        (BQScalarType.FLOAT, 'FLOAT64'),
+        (BQScalarType.BOOLEAN, 'boolean'),
+        (BQScalarType.DATE, 'DATE'),
+        (BQScalarType.DATETIME, 'datetime'),
+        (BQScalarType.INTEGER, 'INTEGER'),
+        (BQScalarType.FLOAT, 'FlOaT'),
+        (BQScalarType.STRING, 'STRING'),
+        (BQScalarType.TIMESTAMP, 'timeSTAMP'),
+    )
+    @unpack
+    def test_convert_from_string_to_bq_scalar_type(self, bq_type, string):
+        # type: (BQScalarType, str) -> None
+        self.assertEqual(BQScalarType.from_string(string), bq_type)
+        self.assertEqual(BQScalarType.from_string(string.lower()), bq_type)
 
     @data(
         (BQScalarType.BOOLEAN,),

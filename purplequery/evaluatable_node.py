@@ -941,6 +941,18 @@ class Timestamp(_NonAggregatingFunction):
         return values[0].apply(pd.Timestamp)
 
 
+class Current_Timestamp(_NonAggregatingFunction):
+    '''The current time.'''
+
+    _result_type = BQScalarType.TIMESTAMP
+
+    def function(self, values):
+        # No-argument functions are given a constant argument in order to
+        # determine the number of rows to return, and with what index.
+        constant, = values
+        return pd.Series([pd.Timestamp.now()]*len(constant), index=constant.index)
+
+
 class Row_Number(_NonAggregatingFunction):
     '''A numbering of the rows in a column.'''
 
@@ -956,7 +968,8 @@ class FunctionCall(object):
     '''Abstract base class for function call expressions. Subclasses are aggregating or not.'''
 
     _FUNCTION_MAP = {function_info.name(): function_info()
-                     for function_info in (Min, Max, Sum, Mod, Concat, Timestamp, Row_Number)}
+                     for function_info in (Min, Max, Sum, Mod, Concat, Timestamp, Current_Timestamp,
+                                           Row_Number)}
 
     @classmethod
     def create(cls,
@@ -1014,7 +1027,9 @@ class _NonAggregatingFunctionCall(FunctionCall, EvaluatableNodeWithChildren):
         if not isinstance(expression, _EmptyNode):
             self.children = expression
         else:
-            self.children = []
+            # Functions need at least one argument to know how many rows
+            # to return, and with what index, so introduce a placeholder.
+            self.children = [Value(1, BQScalarType.INTEGER)]
 
     def copy(self, new_arguments):
         # type: (Sequence[EvaluatableNode]) -> EvaluatableNode

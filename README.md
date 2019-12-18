@@ -64,7 +64,7 @@ Functions including
 from google.cloud.bigquery import Dataset, DatasetReference, Table, TableReference
 from google.cloud.bigquery.job import QueryJobConfig
 from google.cloud.bigquery.schema import SchemaField
-from purplequery.client import Client
+from purplequery import Client
 
 bq_client = Client('my_project')
 
@@ -96,7 +96,7 @@ to test methods will use PurpleQuery instead of the Google BigQuery client.
 
 ```python
 from verily.bigquery_wrapper import bq_test_case
-from client import Client as FakeClient
+from purplequery import Client as FakeClient
 
 class MyTest(bq_test_case.BQTestCase):
 

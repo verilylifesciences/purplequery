@@ -119,6 +119,8 @@ Function                  # Abstract base class of all functions
   |\
   | Concat                # Concatenate strings
   |\
+  | Current_Timestamp     # Current timestamp (i.e. now).
+  |\
   | Mod                   # Modulus, aka remainder after division
   |\
   | Row_number            # (analytic) Numbers the rows in a column.

@@ -13,9 +13,16 @@ from .patterns import (BACKTICK_PATTERN, COMMENT_PATTERN, FLOAT_LITERAL_PATTERNS
                        IDENTIFIER_PATTERN, INT_LITERAL_PATTERN, NON_OPERATOR_TOKEN_PATTERN,
                        STR_LITERAL_PATTERNS)
 
+_COMPILED_COMMENT_PATTERN = re.compile(COMMENT_PATTERN, flags=re.MULTILINE)
+
+
+def remove_comments(query):
+    # type: (str) -> str
+    return _COMPILED_COMMENT_PATTERN.sub('', query)
+
+
 _COMBINED_PATTERN = re.compile(
     '|'.join((
-        COMMENT_PATTERN,
         BACKTICK_PATTERN,
         '|'.join(STR_LITERAL_PATTERNS),
         BINARY_OPERATOR_PATTERN,
@@ -28,5 +35,4 @@ _COMBINED_PATTERN = re.compile(
 
 def tokenize(query):
     # type: (str) -> List[str]
-    matches = _COMBINED_PATTERN.findall(query)
-    return [match for match in matches if not match.startswith('--')]  # strip comments
+    return _COMBINED_PATTERN.findall(remove_comments(query))

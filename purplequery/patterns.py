@@ -18,5 +18,7 @@ FLOAT_LITERAL_PATTERNS = [
     r'\d*\.\d+(?:[eE][+-]?\d+)?',
     # Digits, exponent
     r'\d+[eE][+-]?\d+']
-COMMENT_PATTERN = '--.*$'
+
+# Covers three options for comments: -- to end of line, # to end of line, /* ... */
+COMMENT_PATTERN = '--.*$|#.*$|/\*([^*]|\*[^/])*\*/'
 NON_OPERATOR_TOKEN_PATTERN = r'[().,!]|\[|\]'

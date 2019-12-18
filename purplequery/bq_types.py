@@ -152,6 +152,8 @@ class BQScalarType(BQType, enum.Enum):
         Returns:
             The corresponding BQScalarType enum.
         """
+        if isinstance(typename, str):
+            typename = typename.upper()
         if typename in _LEGACY_BQ_SCALAR_TYPE_FROM_BQ_SCALAR_TYPE:
             return _LEGACY_BQ_SCALAR_TYPE_FROM_BQ_SCALAR_TYPE[typename]
         return cls(typename)

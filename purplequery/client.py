@@ -140,12 +140,13 @@ class Client:
             DatasetListItem({"datasetReference": {"projectId": project, "datasetId": dataset_id}})
             for dataset_id in self._safe_lookup(project)]
 
-    def list_tables(self, dataset_ref, retry=None):
-        # type: (DatasetReference, Optional[Retry]) -> List[TableListItem]
+    def list_tables(self, dataset_ref, max_results=None, retry=None):
+        # type: (DatasetReference, Optional[int], Optional[Retry]) -> List[TableListItem]
         """Lists all tables in a given dataset.
 
         Args:
             dataset_ref: The dataset to list.
+            max_results: The maximum number of results to return.
             retry: If provided, what retry strategy to use (unused in this implementation).
 
         Returns:
@@ -161,7 +162,8 @@ class Client:
                            {"projectId": dataset_ref.project,
                             "datasetId": dataset_ref.dataset_id,
                             "tableId": table_id}})
-            for table_id in self._safe_lookup(dataset_ref.project, dataset_ref.dataset_id)]
+            for table_id in self._safe_lookup(dataset_ref.project,
+                                              dataset_ref.dataset_id)][:max_results]
 
     def create_dataset(self, dataset):
         # type: (Dataset) -> None

@@ -12,7 +12,7 @@ from .bq_types import TypedDataFrame  # noqa: F401
 from .dataframe_node import QueryExpression
 from .grammar import query_expression
 from .query_helper import apply_rule
-from .tokenizer import tokenize
+from .tokenizer import remove_comments, tokenize
 
 
 def _simplify_query(query):
@@ -24,12 +24,7 @@ def _simplify_query(query):
     Returns:
         A new query string without comments and extra whitespace
     '''
-    prev, cur = None, query
-    # There's a bug in re.sub where it doesn't work for adjacent matches
-    while prev != cur:
-        prev = cur
-        cur = re.sub(r'--.*\n', '', prev)
-    return re.sub(r'[\n\s]+', ' ', cur)
+    return re.sub(r'[\n\s]+', ' ', remove_comments(query))
 
 
 def execute_query(query, datasets):

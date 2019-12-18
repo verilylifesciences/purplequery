@@ -6,7 +6,7 @@
 import datetime
 import unittest
 from re import escape
-from typing import Any, List, Optional, Sequence, Tuple, Union  # noqa: F401
+from typing import Any, List, Optional, Sequence, Tuple, Union, cast  # noqa: F401
 
 import numpy as np
 import pandas as pd
@@ -156,6 +156,21 @@ class EvaluatableNodeTest(unittest.TestCase):
         self.assertEqual(
                 [result.type_.convert(elt) for elt in result.series],
                 expected_result)
+
+    def test_current_timestamp(self):
+        # type: () -> None
+        node, leftover = apply_rule(query_expression, tokenize(
+            'select current_timestamp(), a from unnest([struct(1 as a), struct(2), struct(3)])'))
+        assert isinstance(node, QueryExpression)
+        self.assertFalse(leftover)
+        result, _ = node.get_dataframe(DatasetTableContext({}))
+        table = cast(List[List[datetime.datetime]], result.to_list_of_lists())
+        self.assertEqual(len(table), 3)
+        # CURRENT_TIMESTAMP() returns a very recent timestamp
+        self.assertLess((datetime.datetime.now() - table[0][0]).seconds, 2)
+        # All rows have the same timestamp value.
+        self.assertEqual(table[0][0], table[1][0])
+        self.assertEqual(table[0][0], table[2][0])
 
     def test_bad_function(self):
         # type: () -> None
@@ -358,7 +373,7 @@ class EvaluatableNodeTest(unittest.TestCase):
              error='Array specifies type INTEGER, incompatible with values of type FLOAT'),
         dict(query='SELECT ARRAY<INT64>[1,2,"a"]',
              error='Cannot implicitly coerce the given types'),
-        dict(query='SELECT ARRAY<STRING>[1,2]',
+        dict(query='SELECT ARRAY<string>[1,2]',
              error='Cannot implicitly coerce the given types'),
         dict(query='SELECT [[1]]',
              error='Cannot create arrays of arrays'),

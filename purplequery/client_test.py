@@ -178,6 +178,17 @@ class ClientTest(ClientTestBase):
             [table_ref.table_id for table_ref in self.bq_client.list_tables(dataset_ref1)],
             ['table1', 'table2'])
 
+    def test_listing_tables_with_max(self):
+        # type: () -> None
+        dataset_ref1 = DatasetReference('my_project', 'dataset1')
+        self.bq_client.create_dataset(Dataset(dataset_ref1))
+        for i in range(10):
+            self.bq_client.create_table(Table(TableReference(dataset_ref1, 'table{}'.format(i)),
+                                              _TEST_SCHEMA))
+        self.assertEqual(5, len(self.bq_client.list_tables(dataset_ref1, max_results=5)))
+        self.assertEqual(10, len(self.bq_client.list_tables(dataset_ref1, max_results=20)))
+        self.assertEqual(10, len(self.bq_client.list_tables(dataset_ref1)))
+
     # This row uses _TEST_SCHEMA.
     # The string-valued field ID intentionally has only numeric values, to
     # ensure that we are enforcing the type at read time rather than
