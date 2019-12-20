@@ -19,6 +19,12 @@ AbstractSyntaxTreeNode                     # Abstract base class of all syntax t
 |\
   StarSelector                             # The * in SELECT * [EXCEPT] [REPLACE]
 |\
+| Statement                                # A BigQuery statement (not a query)
+| |\
+| | CreateTable                            # A CREATE TABLE statment
+| |\
+| | CreateView                             # A CREATE VIEW statment
+|\
 | DataFrameNode                            # Base class of nodes that compute a whole table
 | |\
 | | QueryExpression                        # Outermost SQL statement; WITH ... ORDER BY ...  LIMIT ...

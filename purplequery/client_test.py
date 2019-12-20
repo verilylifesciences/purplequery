@@ -33,6 +33,9 @@ _TEST_SCHEMA = [SchemaField(name="num", field_type='INTEGER'),
 
 class ClientTestBase(unittest.TestCase):
 
+    def setUp(self):
+        self.bq_client = Client('my_project')
+
     def assertRowsExpected(self, query_job, expected_rows):
         # type: (_FakeJob, List[List[PythonType]]) -> None
         """Assert that query_job has finished and it contains the expected rows.
@@ -42,15 +45,16 @@ class ClientTestBase(unittest.TestCase):
             expected_rows: A List of lists of values
         """
         self.assertTrue(query_job.done())
+        self.assertEqual(query_job.statement_type, 'SELECT')
+        self.assertEqual(query_job.project, 'my_project')
+        self.assertEqual(query_job.location, 'YourDesktop')
+        self.assertTrue(query_job.job_id)
         rows = [list(row.values()) for row in query_job.result()]
         self.assertEqual(rows, expected_rows)
 
 
 @ddt
 class ClientTest(ClientTestBase):
-
-    def setUp(self):
-        self.bq_client = Client('my_project')
 
     def assertDatasetReferenceEqual(self, expected_dataset_reference, found_dataset_reference):
         # type: (DatasetReference, DatasetReference) -> None
@@ -262,8 +266,8 @@ class ClientTest(ClientTestBase):
 class ClientWriteFromQueryTest(ClientTestBase):
 
     def setUp(self):
-        self.bq_client = Client('my_project')
-        dataset_ref = DatasetReference('my_project', 'my_dataset')
+        super(ClientWriteFromQueryTest, self).setUp()
+        dataset_ref = DatasetReference(self.bq_client.project, 'my_dataset')
         schema = [SchemaField(name="a", field_type='INT64'),
                   SchemaField(name="b", field_type='FLOAT64'),
                   ]

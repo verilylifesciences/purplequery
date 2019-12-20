@@ -38,7 +38,7 @@ class _WithTableContext(TableContext):
         self.parent_context = parent_context
 
     def lookup(self, path):
-        # type: (Tuple[str, ...]) -> Tuple[TypedDataFrame, Optional[str]]
+        # type: (Sequence[str]) -> Tuple[TypedDataFrame, Optional[str]]
         '''Look up a path to a table in this context.'''
 
         if len(path) == 1 and path[0] == self.name:

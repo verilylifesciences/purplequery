@@ -10,13 +10,14 @@ import pandas as pd
 from ddt import data, ddt, unpack
 
 from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, AbstractSyntaxTreeNode,  # noqa: F401
-                                                 DatasetTableContext, EvaluationContext, _EmptyNode)
+                                                 EvaluationContext, _EmptyNode)
 from purplequery.bq_types import BQScalarType, TypedDataFrame
 from purplequery.dataframe_node import TableReference
 from purplequery.grammar import data_source
 from purplequery.join import ConditionsType  # noqa: F401
 from purplequery.join import DataSource, Join
 from purplequery.query_helper import apply_rule
+from purplequery.storage import DatasetTableContext
 from purplequery.tokenizer import tokenize
 
 

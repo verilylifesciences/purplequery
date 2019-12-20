@@ -6,6 +6,7 @@
 """Fake implementation of Google BigQuery client."""
 
 import collections
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast  # noqa: F401
 from typing.io import TextIO  # noqa: F401
 
@@ -20,6 +21,7 @@ from google.cloud.bigquery.job import LoadJobConfig, QueryJobConfig  # noqa: F40
 from google.cloud.bigquery.schema import SchemaField  # noqa: F401
 from google.cloud.bigquery.table import TableListItem  # noqa: F401
 
+from .bq_abstract_syntax_tree import Result  # noqa: F401
 from .bq_types import BQScalarType  # noqa: F401
 from .bq_types import BQArray, BQType, TypedDataFrame
 from .query import execute_query
@@ -300,7 +302,7 @@ class Client:
                     parse_dates=date_fields,
                     converters=converters),
                 typed_dataframe.types))
-        return _FakeJob(None)
+        return _FakeJob(None, self.project)
 
     def delete_dataset(self, dataset_ref, retry=None, delete_contents=False):
         # type: (DatasetReference, Optional[Retry], bool) -> None
@@ -392,17 +394,18 @@ class Client:
                   not typed_dataframe.dataframe.empty):
                 # TODO: Support appending rows to a table that have a subset of the existing columns
                 # by filling missing column values with NULLs.
-                if typed_dataframe.types != result.types:
+                if typed_dataframe.types != result.table.types:
                     raise ValueError(
                         "Bad request; trying to append data of type {} to data of type {}".format(
-                            result.types, typed_dataframe.types))
+                            result.table.types, typed_dataframe.types))
                 table_map[table_ref.table_id] = (
                     TypedDataFrame(
-                        _rename_and_append_dataframe(typed_dataframe.dataframe, result.dataframe),
+                        _rename_and_append_dataframe(typed_dataframe.dataframe,
+                                                     result.table.dataframe),
                         typed_dataframe.types))
             else:  # Either write_truncate, or (write_empty or write_append) to an empty table
-                table_map[table_ref.table_id] = result
-        return _FakeJob([_FakeRow(row) for row in result.to_list_of_lists()])
+                table_map[table_ref.table_id] = result.table
+        return _FakeJob(result, self.project)
 
 
 def _rename_and_append_dataframe(old_dataframe, new_dataframe):
@@ -444,11 +447,18 @@ def _make_array_reader(bq_type):
 
 class _FakeJob:
     """A minimal fake implementation of google.cloud.bigquery.*Job."""
-    def __init__(self, result):
-        # type: (Any) -> None
-        self._result = result
+    def __init__(self, result, project):
+        # type: (Result, str) -> None
         self.error_result = None
         self.errors = ()
+        self._result = None
+        if result:
+            if result.table:
+                self._result = [_FakeRow(row) for row in result.table.to_list_of_lists()]
+            self.statement_type = result.statement_type
+        self.project = project
+        self.location = 'YourDesktop'
+        self.job_id = uuid.uuid4()
 
     def result(self, timeout=None):
         # type: (Optional[int]) -> Any

@@ -39,6 +39,8 @@ for version in 2 3.6 3.7 3.5; do
   python$version -m purplequery.join_test
   python$version -m purplequery.query_helper_test
   python$version -m purplequery.query_test
+  python$version -m purplequery.statement_grammar_test
+  python$version -m purplequery.statements_test
   python$version -m purplequery.terminals_test
   python$version -m purplequery.tokenizer_test
   python$version -m purplequery.type_grammar_test

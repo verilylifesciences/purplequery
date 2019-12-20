@@ -27,10 +27,16 @@ py_test(
 )
 
 py_library(
+    name = "storage",
+    srcs = ["storage.py"],
+)
+
+py_library(
     name = "bq_abstract_syntax_tree",
     srcs = ["bq_abstract_syntax_tree.py"],
     deps = [
         ":bq_types",
+        ":storage",
     ],
 )
 
@@ -205,8 +211,8 @@ py_library(
     deps = [
         ":bq_abstract_syntax_tree",
         ":bq_types",
-        ":grammar",
         ":query_helper",
+        ":statement_grammar",
         ":tokenizer",
     ],
 )
@@ -300,5 +306,47 @@ py2and3_test(
     deps = [
         ":tokenizer",
         ":type_grammar",
+    ],
+)
+
+py_library(
+    name = "statement_grammar",
+    srcs = ["statement_grammar.py"],
+    deps = [
+        ":grammar",
+        ":statements",
+    ],
+)
+
+py_test(
+    name = "statement_grammar_test",
+    srcs = ["statement_grammar_test.py"],
+    deps = [
+        ":statement_grammar",
+        ":tokenizer",
+    ],
+)
+
+py_library(
+    name = "statements",
+    srcs = ["statements.py"],
+    deps = [
+        ":bq_abstract_syntax_tree",
+        ":bq_types",
+        ":query_helper",
+        ":terminals",
+    ],
+)
+
+py2and3_test(
+    name = "statements_test",
+    srcs = ["statements_test.py"],
+    deps = [
+        ":bq_abstract_syntax_tree",
+        ":bq_types",
+        ":grammar",
+        ":query_helper",
+        ":statement_grammar",
+        ":tokenizer",
     ],
 )

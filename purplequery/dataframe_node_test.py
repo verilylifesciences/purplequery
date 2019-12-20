@@ -10,14 +10,15 @@ import pandas as pd
 from ddt import data, ddt, unpack
 
 from purplequery.binary_expression import BinaryExpression
-from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, DatasetTableContext,  # noqa: F401
-                                                 EvaluatableNode, Field, TableContext)
+from purplequery.bq_abstract_syntax_tree import (EMPTY_NODE, EvaluatableNode, Field,  # noqa: F401
+                                                 TableContext)
 from purplequery.bq_types import BQScalarType, TypedDataFrame
 from purplequery.dataframe_node import QueryExpression, Select, TableReference
 from purplequery.evaluatable_node import Selector, StarSelector, Value
 from purplequery.grammar import query_expression as query_expression_rule
 from purplequery.grammar import select as select_rule
 from purplequery.join import DataSource
+from purplequery.storage import DatasetTableContext
 from purplequery.tokenizer import tokenize
 
 

@@ -15,9 +15,8 @@ from ddt import data, ddt, unpack
 
 from purplequery.binary_expression import BinaryExpression
 from purplequery.bq_abstract_syntax_tree import (EMPTY_CONTEXT, EMPTY_NODE,  # noqa: F401
-                                                 AbstractSyntaxTreeNode, DatasetTableContext,
-                                                 EvaluatableNode, EvaluationContext, Field,
-                                                 GroupedBy, _EmptyNode)
+                                                 AbstractSyntaxTreeNode, EvaluatableNode,
+                                                 EvaluationContext, Field, GroupedBy, _EmptyNode)
 from purplequery.bq_types import (BQArray, BQScalarType, BQStructType, BQType,  # noqa: F401
                                   PythonType, TypedDataFrame, TypedSeries)
 from purplequery.dataframe_node import QueryExpression, Select, TableReference
@@ -27,6 +26,7 @@ from purplequery.evaluatable_node import (Case, Cast, Exists, Extract, FunctionC
 from purplequery.grammar import select as select_rule
 from purplequery.grammar import query_expression
 from purplequery.query_helper import apply_rule
+from purplequery.storage import DatasetTableContext
 from purplequery.tokenizer import tokenize
 
 

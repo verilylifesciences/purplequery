@@ -251,7 +251,7 @@ class QueryTest(unittest.TestCase):
     )
     @unpack
     def test_scalar_selects(self, sql_query, expected_result):
-        result = execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets).table
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     @data(('',
@@ -290,7 +290,7 @@ class QueryTest(unittest.TestCase):
         sql_query = (
             ('select lefty.a, righty.a, b, c from `my_project.my_dataset.lefty`'
              '{} join `my_project.my_dataset.righty` on lefty.a=righty.a').format(join_type))
-        result = execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets).table
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     @data(
@@ -316,7 +316,7 @@ class QueryTest(unittest.TestCase):
         sql_query = (
             ('select lefty.a,righty.a,b,c from `my_project.my_dataset.lefty`'
              'full outer join `my_project.my_dataset.righty` {}').format(condition))
-        result = execute_query(sql_query, self.datasets)
+        result = execute_query(sql_query, self.datasets).table
         self.assertEqual(result.to_list_of_lists(), expected_result)
 
     def test_leftover_error(self):
