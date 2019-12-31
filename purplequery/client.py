@@ -347,7 +347,7 @@ class Client:
         del retry  # Unused in this implementation.
         new_dataframe_rows = []
         for row in rows:
-            new_dataframe_rows.append([row[field.name] for field in table.schema])
+            new_dataframe_rows.append([row.get(field.name) for field in table.schema])
         new_dataframe = pd.DataFrame(new_dataframe_rows,
                                      columns=[field.name for field in table.schema])
         old_typed_dataframe = self._safe_lookup(table.project, table.dataset_id, table.table_id)

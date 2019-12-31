@@ -244,12 +244,18 @@ class ClientTest(ClientTestBase):
 
         # Insert two rows, check that they landed
         self.assertFalse(self.bq_client.insert_rows(table, [{'a': 1, 'b': 2.5},
-                                                            {'a': 3, 'b': 4.25}]))
+                                                            # Intentionally omit 'b' here.
+                                                            {'a': 3}]))
         self.assertRowsExpected(
                 self.bq_client.query('SELECT * FROM `my_project.my_dataset.table1`',
                                      QueryJobConfig()),
                 [[1, 2.5],
-                 [3, 4.25]])
+                 [3, None]])
+
+        self.assertRowsExpected(
+                self.bq_client.query('SELECT a FROM `my_project.my_dataset.table1` WHERE b is NULL',
+                                     QueryJobConfig()),
+                [[3]])
 
         # Insert two more rows, check that all four rows are now present.
         self.assertFalse(self.bq_client.insert_rows(table, [{'a': 5, 'b': 6.5},
@@ -258,7 +264,7 @@ class ClientTest(ClientTestBase):
                 self.bq_client.query('SELECT * FROM `my_project.my_dataset.table1`',
                                      QueryJobConfig()),
                 [[1, 2.5],
-                 [3, 4.25],
+                 [3, None],
                  [5, 6.5],
                  [7, 8.25]])
 
