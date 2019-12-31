@@ -334,7 +334,8 @@ class InCheck(EvaluatableNodeWithChildren):
         # type: (List[TypedSeries]) -> TypedSeries
         expression_value = evaluated_children[0]
         element_values = evaluated_children[1:]
-        contained = pd.Series([False] * len(expression_value.series))
+        contained = pd.Series([False] * len(expression_value.series),
+                              index=expression_value.series.index)
         for element_value in element_values:
             contained = contained | (expression_value.series == element_value.series)
         if self.direction:

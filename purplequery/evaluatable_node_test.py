@@ -177,6 +177,47 @@ class EvaluatableNodeTest(unittest.TestCase):
         self.assertEqual(table[0][0], table[1][0])
         self.assertEqual(table[0][0], table[2][0])
 
+    @data(
+        # These expressions are ones whose EvaluatableNode subclass constructs a
+        # new pandas Series rather than computing on existing ones.  See below:
+        # this runs the risk of constructing it with an incorrect index.
+        dict(query='select 10, c', expected_result=[[10, 6], [10, 9]]),
+        dict(query='select [a, b], c', expected_result=[[(4, 5), 6], [(7, 8), 9]]),
+        dict(query='select (a, b), c', expected_result=[[(4, 5), 6], [(7, 8), 9]]),
+        dict(query='select exists(select 1), c', expected_result=[[True, 6], [True, 9]]),
+        dict(query='select a in (1, 4), c', expected_result=[[True, 6], [False, 9]]),
+        dict(query='select row_number() over (), c', expected_result=[[1, 6], [2, 9]]),
+        dict(query='select current_timestamp() > timestamp("2019-01-01"), c',
+             expected_result=[[True, 6], [True, 9]]),
+    )
+    @unpack
+    def test_constructed_column_has_correct_index(self, query, expected_result):
+        # type: (str, List[List[int]]) -> None
+        '''Checks that manually constructed columns have the same index as the data.
+
+        A manually constructed column will usually have an index 0, 1, 2, ...
+        (e.g. pd.Series(['a', 'b', 'c']) has index 0, 1, 2).
+        The data may not; filtering, sorting or other changes might result in an index of
+        different numbers.  If one column's index doesn't match the index of other columns,
+        it can't be compared or joined with them properly.
+        '''
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame([[1, 2, -1], [4, 5, 6], [7, 8, 9]], columns=['a', 'b', 'c']),
+                types=[BQScalarType.INTEGER, BQScalarType.INTEGER, BQScalarType.INTEGER])}}})
+
+        # Skip the first row of the table, so that the index of the table that
+        # the test queries operate on is [1, 2]; this makes sure that the index is
+        # different from the default index you would get for a two-row column,
+        # which would be [0, 1], to test that expressions are not incorrectly
+        # using that default index.
+        node, leftover = select_rule(tokenize(query + ' from (select * from my_table where c > 0)'))
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(table_context)
+        self.assertFalse(leftover)
+        self.assertEqual(result.to_list_of_lists(), expected_result)
+        self.assertEqual(list(result.dataframe.index), [1, 2])
+
     def test_bad_function(self):
         # type: () -> None
         context = EvaluationContext(self.small_table_context)
