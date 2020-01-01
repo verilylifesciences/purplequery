@@ -10,12 +10,12 @@ set -o nounset
 set -o errexit
 set -o xtrace
 
-for version in 2 3; do
+for version in 2 3.6 3.7 3.5; do
 
-  virtualenv --system-site-packages -p python$version virtualTestEnv
+  virtualenv --system-site-packages -p python$version virtualTestEnv$version
   # Work around virtual env error 'PS1: unbound variable'
   set +o nounset
-  source virtualTestEnv/bin/activate
+  source virtualTestEnv$version/bin/activate
   set -o nounset
 
   export TEST_PROJECT=""
@@ -42,6 +42,12 @@ for version in 2 3; do
   python$version -m purplequery.terminals_test
   python$version -m purplequery.tokenizer_test
   python$version -m purplequery.type_grammar_test
+
+  if [ "$version" = "3.5" ]; then
+    pip$version install -r lint-requirements.txt
+    flake8 purplequery
+    mypy purplequery
+  fi
 
   deactivate
 done

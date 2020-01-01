@@ -1,5 +1,5 @@
 __pycache__
 *.pyc
 .mypy_cache
-virtualTestEnv
+virtualTestEnv*
 bazel-*
