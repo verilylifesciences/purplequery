@@ -129,9 +129,12 @@ class EvaluatableNodeTest(unittest.TestCase):
         self.assertEqual(typed_series.series.name, 'a')
 
     @data(
-        dict(function_name='sum', args=[Field(('a',))], expected_result=[3]),
-        dict(function_name='max', args=[Field(('a',))], expected_result=[2]),
-        dict(function_name='min', args=[Field(('a',))], expected_result=[1]),
+        dict(function_name='sum', args=[Field(('a',))], expected_result=[3],
+             is_aggregating=True),
+        dict(function_name='max', args=[Field(('a',))], expected_result=[2],
+             is_aggregating=True),
+        dict(function_name='min', args=[Field(('a',))], expected_result=[1],
+             is_aggregating=True),
         dict(function_name='concat',
              args=[Value('foo', BQScalarType.STRING), Value('bar', BQScalarType.STRING)],
              expected_result=['foobar'] * 2),  # two copies to match length of context table.
@@ -146,11 +149,13 @@ class EvaluatableNodeTest(unittest.TestCase):
              expected_result=[datetime.datetime(2019, 4, 22)] * 2),  # two copies to match table len
     )
     @unpack
-    def test_functions(self, function_name, args, expected_result):
-        # type: (str, List[EvaluatableNode], List[PythonType]) -> None
+    def test_functions(self, function_name, args, expected_result, is_aggregating=False):
+        # type: (str, List[EvaluatableNode], List[PythonType], bool) -> None
         context = EvaluationContext(self.small_table_context)
         context.add_table_from_node(TableReference(('my_project', 'my_dataset', 'my_table')),
                                     EMPTY_NODE)
+        if is_aggregating:
+            context.do_group_by((), [])
         result = FunctionCall.create(function_name, args, EMPTY_NODE).evaluate(context)
         assert isinstance(result, TypedSeries)
         self.assertEqual(
@@ -206,6 +211,24 @@ class EvaluatableNodeTest(unittest.TestCase):
 
         tokens = tokenize('select {} from my_table group by b'.format(selectors))
         node, leftover = select_rule(tokens)
+        assert isinstance(node, Select)
+        result, unused_table_name = node.get_dataframe(table_context)
+        self.assertFalse(leftover)
+        self.assertEqual(result.to_list_of_lists(), expected_result)
+
+    @data(
+        dict(query='select sum(a + 1) + 2, count(*) + 3, 4 from my_table',
+             expected_result=[[11, 6, 4]]),
+    )
+    @unpack
+    def test_aggregate_functions_in_expressions(self, query, expected_result):
+        # type: (str, List[List[int]]) -> None
+        table_context = DatasetTableContext(
+            {'my_project': {'my_dataset': {'my_table': TypedDataFrame(
+                pd.DataFrame([[1], [2], [3]], columns=['a']),
+                types=[BQScalarType.INTEGER])}}})
+
+        node, leftover = select_rule(tokenize(query))
         assert isinstance(node, Select)
         result, unused_table_name = node.get_dataframe(table_context)
         self.assertFalse(leftover)

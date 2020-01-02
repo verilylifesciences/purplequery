@@ -1060,13 +1060,6 @@ class _AggregatingFunctionCall(FunctionCall, EvaluatableNodeThatAggregatesOrGrou
         # type: (List[TypedSeries]) -> TypedSeries
         return self._evaluate(
             arguments,
-            lambda values: pd.Series([self.function_info.aggregating_function(values)]),
-            self.function_info.compute_result_type)
-
-    def _evaluate_node_in_group_by(self, arguments):
-        # type: (List[TypedSeries]) -> TypedSeries
-        return self._evaluate(
-            arguments,
             lambda values: values[0].apply(lambda x: self.function_info.aggregating_function([x])),
             self.function_info.compute_result_type)
 

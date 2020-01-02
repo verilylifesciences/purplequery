@@ -148,6 +148,11 @@ class EvaluatableNode(AbstractSyntaxTreeNode):
         '''Returns true if this expression is the same when evaluated in any context.'''
         return True
 
+    def is_aggregated(self):
+        # type: () -> bool
+        '''Returns true if this expression contains any aggregation.'''
+        return False
+
 
 class EvaluatableLeafNode(EvaluatableNode):
     '''Abstract Syntax Tree Node that can be evaluated and has no child nodes.'''
@@ -292,6 +297,11 @@ class EvaluatableNodeWithChildren(EvaluatableNode):
         '''Returns true if this expression is the same when evaluated in any context.'''
         return all(child.is_constant() for child in self.children)
 
+    def is_aggregated(self):
+        # type: () -> bool
+        '''See parent class for docstring.'''
+        return any(child.is_aggregated() for child in self.children)
+
 
 class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
     '''Abstract Syntax Tree node that can be evaluated that aggregates child nodes.
@@ -316,32 +326,6 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
                 [Field(context.maybe_add_column(evaluated_child))
                  for evaluated_child in evaluated_children])
 
-    def evaluate(self, context):
-        # type: (EvaluationContext) -> Union[TypedDataFrame, TypedSeries]
-        '''See docstring in EvaluatableNode.evaluate.'''
-        evaluated_children = self._ensure_fully_evaluated(
-            [child.evaluate(context) for child in self.children])
-        if context.group_by_paths:
-            return self._evaluate_node_in_group_by(evaluated_children)
-        else:
-            return self._evaluate_node(evaluated_children)
-
-    @abstractmethod
-    def _evaluate_node_in_group_by(self, evaluated_children):
-        # type: (List[TypedSeries]) -> TypedSeries
-        '''Computes a new column based on the evaluated arguments in a group by context.
-
-        Unlike _evaluate_node, here the evaluated children are grouped by some set of fields;
-        this function evalutes this expression on those arguments.
-
-        This method must be overriden by all subclasses.
-
-        Args:
-            evaluated_children: The already-evaluated children of this node.
-        Returns:
-            A new column (TypedSeries)
-        '''
-
     def mark_grouped_by(self, group_by_paths, context):
         # type: (Sequence[Tuple[str, ...]], EvaluationContext) -> EvaluatableNode
         '''Returns a new syntax tree rooted at the current one, marking fields that are grouped by.
@@ -358,6 +342,11 @@ class EvaluatableNodeThatAggregatesOrGroups(EvaluatableNodeWithChildren):
         # type: () -> bool
         '''Any expression that aggregates may not be constant once grouping is applied.'''
         return False
+
+    def is_aggregated(self):
+        # type: () -> bool
+        '''See parent class for docstring.'''
+        return True
 
 
 class Result(object):
@@ -413,14 +402,14 @@ class DataframeNode(AbstractSyntaxTreeNode):
 class GroupedBy(EvaluatableNodeThatAggregatesOrGroups):
     '''One of the columns grouped by.
 
-    When GROUP BY is used, every column that is SELECTed must either be aggregated (min, max, etc)
-    or be one of the columns grouped by, otherwise it might have multiple values across the group,
-    which doesn't make sense to select one of.  In this implementation, this manifests as follows:
-    when a column is evaluated, the expressions are pandas SeriesGroupBy objects, and those need to
-    be either aggregated into Serieses, or marked with a GroupedBy node as being one of the columns
-    grouped by.  A GroupedBy node's child will evaluate to an expression constant within its group
-    (by definition) but we need to explicitly convert it to a Series containing those constant
-    elements.
+    When GROUP BY is used, every column that is SELECTed must either be aggregated (min, max, etc),
+    be a constant, or be one of the columns grouped by, otherwise it might have multiple values
+    across the group, which doesn't make sense to select one of.  In this implementation, this
+    manifests as follows: when a column is evaluated, the expressions are pandas SeriesGroupBy
+    objects, and those need to be either aggregated into Serieses, or marked with a GroupedBy node
+    as being one of the columns grouped by.  A GroupedBy node's child will evaluate to an expression
+    constant within its group (by definition) but we need to explicitly convert it to a Series
+    containing those constant elements.
     '''
 
     def __init__(self, expression):
@@ -431,11 +420,6 @@ class GroupedBy(EvaluatableNodeThatAggregatesOrGroups):
         return GroupedBy(new_children[0])
 
     def _evaluate_node(self, evaluated_children):
-        # type: (List[TypedSeries]) -> TypedSeries
-        raise ValueError(
-                "It does not make sense to evaluate GroupedBy outside of a grouped context.")
-
-    def _evaluate_node_in_group_by(self, evaluated_children):
         # type: (List[TypedSeries]) -> TypedSeries
         evaluated_expression, = evaluated_children
         if not evaluated_expression.series.min().equals(evaluated_expression.series.max()):
@@ -643,8 +627,14 @@ class EvaluationContext:
         new_selectors = [self._partially_evaluate(selector, group_by_paths)
                          for selector in selectors]
 
-        group_by_fields = ['.'.join(path) for path in group_by_paths]
-        grouped = self.table.dataframe.groupby(by=group_by_fields)
+        if group_by_paths:
+            group_by_fields = ['.'.join(path) for path in group_by_paths]
+            grouped = self.table.dataframe.groupby(by=group_by_fields)
+        else:
+            # If no paths are specified to group by, group all rows into one group.
+            # This case is invoked when the query contains aggregation but no
+            # explicit GROUP BY clause.
+            grouped = self.table.dataframe.groupby(by=lambda _: 1)
         self.table = TypedDataFrame(grouped, self.table.types)
         self.group_by_paths = group_by_paths
         return new_selectors

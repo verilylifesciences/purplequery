@@ -325,6 +325,8 @@ class Select(MarkerSyntaxTreeNode, DataframeNode):
         if not isinstance(self.group_by, _EmptyNode):
             fields_for_evaluation = context.do_group_by(
                 expanded_fields, self.group_by)  # type: Sequence[EvaluatableNode]
+        elif any(field.is_aggregated() for field in expanded_fields):
+            fields_for_evaluation = context.do_group_by(expanded_fields, [])
         else:
             fields_for_evaluation = expanded_fields
         result = _evaluate_fields_as_dataframe(fields_for_evaluation, context)
