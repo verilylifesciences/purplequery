@@ -7,7 +7,7 @@
 
 from setuptools import find_packages, setup
 
-REQUIRED_PACKAGES = ['numpy==1.14.3',
+REQUIRED_PACKAGES = ['numpy==1.22.0',
                      'pandas==0.23.3',
                      'google-api-core==1.6.0',
                      'google-cloud-bigquery==1.8.0',
